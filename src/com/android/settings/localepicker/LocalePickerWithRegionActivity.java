@@ -34,11 +34,17 @@ import com.android.internal.app.LocaleStore;
 import com.android.settings.R;
 import com.android.settings.core.SettingsBaseActivity;
 
-/** A activity to show the locale picker page. */
+/**
+ * An activity to show the locale picker page.
+ *
+ * @deprecated use {@link com.android.settings.localepicker.SystemLocalePickerFragment} instead.
+ */
+@Deprecated
 public class LocalePickerWithRegionActivity extends SettingsBaseActivity
         implements LocalePickerWithRegion.LocaleSelectedListener, MenuItem.OnActionExpandListener {
     private static final String TAG = LocalePickerWithRegionActivity.class.getSimpleName();
     private static final String PARENT_FRAGMENT_NAME = "localeListEditor";
+    private static final String CHILD_FRAGMENT_NAME = "LocalePickerWithRegion";
 
     private LocalePickerWithRegion mSelector;
 
@@ -68,12 +74,15 @@ public class LocalePickerWithRegionActivity extends SettingsBaseActivity
                 explicitLocales,
                 null /* appPackageName */,
                 this);
-        getFragmentManager()
-                .beginTransaction()
-                .setTransition(FragmentTransaction.TRANSIT_FRAGMENT_OPEN)
-                .replace(R.id.content_frame, mSelector)
-                .addToBackStack(PARENT_FRAGMENT_NAME)
-                .commit();
+
+        if (getFragmentManager().findFragmentByTag(CHILD_FRAGMENT_NAME) == null) {
+            getFragmentManager()
+                    .beginTransaction()
+                    .setTransition(FragmentTransaction.TRANSIT_FRAGMENT_OPEN)
+                    .replace(R.id.content_frame, mSelector, CHILD_FRAGMENT_NAME)
+                    .addToBackStack(PARENT_FRAGMENT_NAME)
+                    .commit();
+        }
     }
 
     @Override

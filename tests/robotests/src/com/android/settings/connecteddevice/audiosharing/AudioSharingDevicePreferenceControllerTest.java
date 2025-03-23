@@ -18,6 +18,7 @@ package com.android.settings.connecteddevice.audiosharing;
 
 import static com.android.settings.core.BasePreferenceController.AVAILABLE_UNSEARCHABLE;
 import static com.android.settings.core.BasePreferenceController.UNSUPPORTED_ON_DEVICE;
+import static com.android.settingslib.bluetooth.LocalBluetoothLeBroadcast.BLUETOOTH_LE_BROADCAST_PRIMARY_DEVICE_GROUP_ID;
 import static com.android.settingslib.bluetooth.LocalBluetoothLeBroadcast.EXTRA_BLUETOOTH_DEVICE;
 
 import static com.google.common.truth.Truth.assertThat;
@@ -25,15 +26,19 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 import static org.robolectric.Shadows.shadowOf;
 
+import android.app.settings.SettingsEnums;
 import android.bluetooth.BluetoothAdapter;
+import android.bluetooth.BluetoothCsipSetCoordinator;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothLeBroadcastAssistant;
 import android.bluetooth.BluetoothLeBroadcastMetadata;
@@ -42,10 +47,15 @@ import android.bluetooth.BluetoothProfile;
 import android.bluetooth.BluetoothStatusCodes;
 import android.content.Context;
 import android.content.Intent;
+import android.graphics.drawable.Drawable;
+import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.Looper;
 import android.platform.test.flag.junit.SetFlagsRule;
+import android.provider.Settings;
+import android.util.Pair;
 
+import androidx.annotation.NonNull;
 import androidx.fragment.app.FragmentActivity;
 import androidx.lifecycle.LifecycleOwner;
 import androidx.preference.Preference;
@@ -54,9 +64,13 @@ import androidx.preference.PreferenceManager;
 import androidx.preference.PreferenceScreen;
 import androidx.test.core.app.ApplicationProvider;
 
+import com.android.settings.R;
 import com.android.settings.SettingsActivity;
+import com.android.settings.bluetooth.BluetoothDevicePreference;
 import com.android.settings.bluetooth.Utils;
 import com.android.settings.dashboard.DashboardFragment;
+import com.android.settings.testutils.FakeFeatureFactory;
+import com.android.settings.testutils.shadow.ShadowAudioManager;
 import com.android.settings.testutils.shadow.ShadowBluetoothAdapter;
 import com.android.settings.testutils.shadow.ShadowBluetoothUtils;
 import com.android.settings.testutils.shadow.ShadowFragment;
@@ -96,14 +110,16 @@ import java.util.concurrent.Executor;
 @RunWith(RobolectricTestRunner.class)
 @Config(
         shadows = {
-            ShadowBluetoothAdapter.class,
-            ShadowBluetoothUtils.class,
-            ShadowFragment.class,
+                ShadowBluetoothAdapter.class,
+                ShadowBluetoothUtils.class,
+                ShadowFragment.class,
+                ShadowAudioManager.class,
         })
 public class AudioSharingDevicePreferenceControllerTest {
     private static final String KEY = "audio_sharing_device_list";
     private static final String KEY_AUDIO_SHARING_SETTINGS =
             "connected_device_audio_sharing_settings";
+    private static final String TEST_DEVICE_NAME = "test";
 
     @Rule public final MockitoRule mMockitoRule = MockitoJUnit.rule();
     @Rule public final SetFlagsRule mSetFlagsRule = new SetFlagsRule();
@@ -136,6 +152,8 @@ public class AudioSharingDevicePreferenceControllerTest {
     private LifecycleOwner mLifecycleOwner;
     private PreferenceCategory mPreferenceGroup;
     private Preference mAudioSharingPreference;
+    private FakeFeatureFactory mFeatureFactory;
+    private AudioManager mAudioManager;
 
     @Before
     public void setUp() {
@@ -148,6 +166,8 @@ public class AudioSharingDevicePreferenceControllerTest {
                 BluetoothStatusCodes.FEATURE_SUPPORTED);
         mLifecycleOwner = () -> mLifecycle;
         mLifecycle = new Lifecycle(mLifecycleOwner);
+        mFeatureFactory = FakeFeatureFactory.setupForTest();
+        mAudioManager = mContext.getSystemService(AudioManager.class);
         ShadowBluetoothUtils.sLocalBluetoothManager = mLocalBtManager;
         mLocalBtManager = Utils.getLocalBtManager(mContext);
         when(mLocalBtManager.getEventManager()).thenReturn(mEventManager);
@@ -175,6 +195,7 @@ public class AudioSharingDevicePreferenceControllerTest {
                 .thenReturn(mAudioSharingPreference);
         when(mScreen.findPreference(KEY)).thenReturn(mPreferenceGroup);
         mController = new AudioSharingDevicePreferenceController(mContext);
+        mController.init(mFragment);
         mController.setBluetoothDeviceUpdater(mBluetoothDeviceUpdater);
         mController.setDialogHandler(mDialogHandler);
         doReturn(mActivity).when(mFragment).getActivity();
@@ -297,7 +318,7 @@ public class AudioSharingDevicePreferenceControllerTest {
 
     @Test
     public void onProfileConnectionStateChanged_notMediaDevice_doNothing() {
-        doReturn(ImmutableList.of()).when(mCachedDevice).getConnectableProfiles();
+        doReturn(ImmutableList.of()).when(mCachedDevice).getUiAccessibleProfiles();
         mController.onProfileConnectionStateChanged(
                 mCachedDevice, BluetoothAdapter.STATE_CONNECTED, BluetoothProfile.HID_DEVICE);
         verifyNoInteractions(mDialogHandler);
@@ -307,7 +328,7 @@ public class AudioSharingDevicePreferenceControllerTest {
     public void onProfileConnectionStateChanged_leaDeviceDisconnected_closeOpeningDialogsForIt() {
         // Test when LEA device LE_AUDIO_BROADCAST_ASSISTANT disconnected.
         when(mDevice.isConnected()).thenReturn(true);
-        doReturn(ImmutableList.of(mLeAudioProfile)).when(mCachedDevice).getConnectableProfiles();
+        doReturn(ImmutableList.of(mLeAudioProfile)).when(mCachedDevice).getUiAccessibleProfiles();
         doReturn(ImmutableList.of(mLeAudioProfile)).when(mCachedDevice).getProfiles();
         mController.onProfileConnectionStateChanged(
                 mCachedDevice,
@@ -319,7 +340,7 @@ public class AudioSharingDevicePreferenceControllerTest {
     @Test
     public void onProfileConnectionStateChanged_assistantProfileConnecting_doNothing() {
         // Test when LEA device LE_AUDIO_BROADCAST_ASSISTANT connecting
-        doReturn(ImmutableList.of(mLeAudioProfile)).when(mCachedDevice).getConnectableProfiles();
+        doReturn(ImmutableList.of(mLeAudioProfile)).when(mCachedDevice).getUiAccessibleProfiles();
         doReturn(ImmutableList.of(mLeAudioProfile)).when(mCachedDevice).getProfiles();
         mController.onProfileConnectionStateChanged(
                 mCachedDevice,
@@ -332,7 +353,7 @@ public class AudioSharingDevicePreferenceControllerTest {
     public void onProfileConnectionStateChanged_otherProfileConnected_doNothing() {
         // Test when LEA device other profile connected
         when(mDevice.isConnected()).thenReturn(true);
-        doReturn(ImmutableList.of(mLeAudioProfile)).when(mCachedDevice).getConnectableProfiles();
+        doReturn(ImmutableList.of(mLeAudioProfile)).when(mCachedDevice).getUiAccessibleProfiles();
         doReturn(ImmutableList.of(mLeAudioProfile)).when(mCachedDevice).getProfiles();
         mController.onProfileConnectionStateChanged(
                 mCachedDevice, BluetoothAdapter.STATE_CONNECTED, BluetoothProfile.A2DP);
@@ -343,7 +364,7 @@ public class AudioSharingDevicePreferenceControllerTest {
     public void onProfileConnectionStateChanged_otherProfileConnecting_doNothing() {
         // Test when LEA device other profile connecting
         when(mDevice.isConnected()).thenReturn(true);
-        doReturn(ImmutableList.of(mLeAudioProfile)).when(mCachedDevice).getConnectableProfiles();
+        doReturn(ImmutableList.of(mLeAudioProfile)).when(mCachedDevice).getUiAccessibleProfiles();
         doReturn(ImmutableList.of(mLeAudioProfile)).when(mCachedDevice).getProfiles();
         mController.onProfileConnectionStateChanged(
                 mCachedDevice, BluetoothAdapter.STATE_CONNECTING, BluetoothProfile.A2DP);
@@ -354,7 +375,7 @@ public class AudioSharingDevicePreferenceControllerTest {
     public void onProfileConnectionStateChanged_assistantProfileConnected_handle() {
         // Test when LEA device LE_AUDIO_BROADCAST_ASSISTANT connected
         when(mDevice.isConnected()).thenReturn(true);
-        doReturn(ImmutableList.of(mLeAudioProfile)).when(mCachedDevice).getConnectableProfiles();
+        doReturn(ImmutableList.of(mLeAudioProfile)).when(mCachedDevice).getUiAccessibleProfiles();
         doReturn(ImmutableList.of(mLeAudioProfile)).when(mCachedDevice).getProfiles();
         mController.onProfileConnectionStateChanged(
                 mCachedDevice,
@@ -368,7 +389,7 @@ public class AudioSharingDevicePreferenceControllerTest {
             onProfileConnectionStateChanged_nonLeaDeviceDisconnected_closeOpeningDialogsForIt() {
         // Test when non-LEA device totally disconnected
         when(mLeAudioProfile.isEnabled(mDevice)).thenReturn(false);
-        doReturn(ImmutableList.of(mA2dpProfile)).when(mCachedDevice).getConnectableProfiles();
+        doReturn(ImmutableList.of(mA2dpProfile)).when(mCachedDevice).getUiAccessibleProfiles();
         doReturn(ImmutableList.of(mLeAudioProfile, mA2dpProfile)).when(mCachedDevice).getProfiles();
         when(mCachedDevice.isConnected()).thenReturn(false);
         mController.onProfileConnectionStateChanged(
@@ -384,7 +405,7 @@ public class AudioSharingDevicePreferenceControllerTest {
                 .thenReturn(BluetoothAdapter.STATE_CONNECTED);
         doReturn(ImmutableList.of(mA2dpProfile, mHeadsetProfile))
                 .when(mCachedDevice)
-                .getConnectableProfiles();
+                .getUiAccessibleProfiles();
         doReturn(ImmutableList.of(mA2dpProfile, mHeadsetProfile)).when(mCachedDevice).getProfiles();
         mController.onProfileConnectionStateChanged(
                 mCachedDevice, BluetoothAdapter.STATE_CONNECTED, BluetoothProfile.A2DP);
@@ -399,7 +420,7 @@ public class AudioSharingDevicePreferenceControllerTest {
                 .thenReturn(BluetoothAdapter.STATE_DISCONNECTED);
         doReturn(ImmutableList.of(mA2dpProfile, mHeadsetProfile))
                 .when(mCachedDevice)
-                .getConnectableProfiles();
+                .getUiAccessibleProfiles();
         doReturn(ImmutableList.of(mA2dpProfile, mHeadsetProfile)).when(mCachedDevice).getProfiles();
         mController.onProfileConnectionStateChanged(
                 mCachedDevice, BluetoothAdapter.STATE_CONNECTED, BluetoothProfile.A2DP);
@@ -500,21 +521,9 @@ public class AudioSharingDevicePreferenceControllerTest {
 
     @Test
     public void testBluetoothLeBroadcastAssistantCallbacks_updateGroup() {
-        // onReceiveStateChanged with unconnected state will do nothing
-        when(mState.getBisSyncState()).thenReturn(new ArrayList<>());
-        mController.mBroadcastAssistantCallback.onReceiveStateChanged(
-                mDevice, /* sourceId= */ 1, mState);
-        shadowOf(Looper.getMainLooper()).idle();
-        verify(mBluetoothDeviceUpdater, never()).forceUpdate();
-        verify(mDialogHandler, never()).closeOpeningDialogsForLeaDevice(mCachedDevice);
-
-        // onReceiveStateChanged with connected state will update group preference and handle
-        // stale dialogs
-        List<Long> bisSyncState = new ArrayList<>();
-        bisSyncState.add(1L);
-        when(mState.getBisSyncState()).thenReturn(bisSyncState);
-        mController.mBroadcastAssistantCallback.onReceiveStateChanged(
-                mDevice, /* sourceId= */ 1, mState);
+        // onSourceAdded will update group preference and handle stale dialogs
+        mController.mBroadcastAssistantCallback.onSourceAdded(mDevice, /* sourceId= */
+                1, /* reason= */ 1);
         shadowOf(Looper.getMainLooper()).idle();
         verify(mBluetoothDeviceUpdater).forceUpdate();
         verify(mDialogHandler).closeOpeningDialogsForLeaDevice(mCachedDevice);
@@ -527,17 +536,37 @@ public class AudioSharingDevicePreferenceControllerTest {
     }
 
     @Test
+    public void testBluetoothLeBroadcastAssistantCallbacks_logAction() {
+        mController.mBroadcastAssistantCallback.onSourceAddFailed(
+                mDevice, mSource, /* reason= */ 1);
+        verify(mFeatureFactory.metricsFeatureProvider)
+                .action(
+                        mContext,
+                        SettingsEnums.ACTION_AUDIO_SHARING_JOIN_FAILED,
+                        SettingsEnums.SETTINGS_CONNECTED_DEVICE_CATEGORY);
+
+        mController.mBroadcastAssistantCallback.onSourceRemoveFailed(
+                mDevice, /* sourceId= */ 1, /* reason= */ 1);
+        verify(mFeatureFactory.metricsFeatureProvider)
+                .action(
+                        mContext,
+                        SettingsEnums.ACTION_AUDIO_SHARING_LEAVE_FAILED,
+                        SettingsEnums.SETTINGS_CONNECTED_DEVICE_CATEGORY);
+    }
+
+    @Test
     public void testBluetoothLeBroadcastAssistantCallbacks_doNothing() {
         mController.mBroadcastAssistantCallback.onSearchStarted(/* reason= */ 1);
         mController.mBroadcastAssistantCallback.onSearchStartFailed(/* reason= */ 1);
         mController.mBroadcastAssistantCallback.onSearchStopped(/* reason= */ 1);
         mController.mBroadcastAssistantCallback.onSearchStopFailed(/* reason= */ 1);
-        mController.mBroadcastAssistantCallback.onSourceAdded(
-                mDevice, /* sourceId= */ 1, /* reason= */ 1);
-        mController.mBroadcastAssistantCallback.onSourceAddFailed(
-                mDevice, mSource, /* reason= */ 1);
-        mController.mBroadcastAssistantCallback.onSourceRemoveFailed(
-                mDevice, /* sourceId= */ 1, /* reason= */ 1);
+        List<Long> bisSyncState = new ArrayList<>();
+        bisSyncState.add(1L);
+        when(mState.getBisSyncState()).thenReturn(bisSyncState);
+        when(mBroadcast.getLatestBroadcastId()).thenReturn(1);
+        when(mState.getBroadcastId()).thenReturn(1);
+        mController.mBroadcastAssistantCallback.onReceiveStateChanged(mDevice, /* sourceId= */ 1,
+                mState);
         mController.mBroadcastAssistantCallback.onSourceModified(
                 mDevice, /* sourceId= */ 1, /* reason= */ 1);
         mController.mBroadcastAssistantCallback.onSourceModifyFailed(
@@ -546,7 +575,85 @@ public class AudioSharingDevicePreferenceControllerTest {
         mController.mBroadcastAssistantCallback.onSourceLost(/* broadcastId= */ 1);
         shadowOf(Looper.getMainLooper()).idle();
 
-        // Above callbacks won't update group preference
+        // Above callbacks won't update group preference and log actions
         verify(mBluetoothDeviceUpdater, never()).forceUpdate();
+        verifyNoMoreInteractions(mFeatureFactory.metricsFeatureProvider);
+    }
+
+    @Test
+    public void testInCallState_showCallStateTitleAndSetActiveOnDeviceClick() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.disableFlags(Flags.FLAG_AUDIO_SHARING_HYSTERESIS_MODE_FIX);
+        Settings.Secure.putInt(mContext.getContentResolver(),
+                BLUETOOTH_LE_BROADCAST_PRIMARY_DEVICE_GROUP_ID,
+                BluetoothCsipSetCoordinator.GROUP_ID_INVALID);
+        mController.displayPreference(mScreen);
+
+        mAudioManager.setMode(AudioManager.MODE_IN_CALL);
+        mController.onAudioModeChanged();
+        shadowOf(Looper.getMainLooper()).idle();
+
+        assertThat(mPreferenceGroup.getTitle().toString())
+                .isEqualTo(mContext.getString(R.string.connected_device_call_device_title));
+
+        BluetoothDevicePreference preference = createBluetoothDevicePreference();
+        mController.onDeviceClick(preference);
+        verify(mCachedDevice).setActive();
+        assertThat(Settings.Secure.getInt(mContext.getContentResolver(),
+                BLUETOOTH_LE_BROADCAST_PRIMARY_DEVICE_GROUP_ID,
+                BluetoothCsipSetCoordinator.GROUP_ID_INVALID)).isEqualTo(
+                BluetoothCsipSetCoordinator.GROUP_ID_INVALID);
+    }
+
+    @Test
+    public void testInCallState_enableHysteresisFix_setAndSaveActiveOnDeviceClick() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mSetFlagsRule.enableFlags(Flags.FLAG_AUDIO_SHARING_HYSTERESIS_MODE_FIX);
+        Settings.Secure.putInt(mContext.getContentResolver(),
+                BLUETOOTH_LE_BROADCAST_PRIMARY_DEVICE_GROUP_ID,
+                BluetoothCsipSetCoordinator.GROUP_ID_INVALID);
+        mController.displayPreference(mScreen);
+
+        mAudioManager.setMode(AudioManager.MODE_IN_CALL);
+        mController.onAudioModeChanged();
+        shadowOf(Looper.getMainLooper()).idle();
+
+        BluetoothDevicePreference preference = createBluetoothDevicePreference();
+        when(mCachedDevice.getGroupId()).thenReturn(1);
+        mController.onDeviceClick(preference);
+        verify(mCachedDevice).setActive();
+        assertThat(Settings.Secure.getInt(mContext.getContentResolver(),
+                BLUETOOTH_LE_BROADCAST_PRIMARY_DEVICE_GROUP_ID,
+                BluetoothCsipSetCoordinator.GROUP_ID_INVALID)).isEqualTo(1);
+    }
+
+    @Test
+    public void testInNormalState_showNormalStateTitleAndDoNothingOnDeviceClick() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        mController.displayPreference(mScreen);
+
+        mAudioManager.setMode(AudioManager.MODE_NORMAL);
+        mController.onAudioModeChanged();
+        shadowOf(Looper.getMainLooper()).idle();
+
+        assertThat(mPreferenceGroup.getTitle().toString())
+                .isEqualTo(mContext.getString(R.string.audio_sharing_device_group_title));
+
+        BluetoothDevicePreference preference = createBluetoothDevicePreference();
+        mController.onDeviceClick(preference);
+
+        verify(mCachedDevice, never()).setActive();
+    }
+
+    @NonNull
+    private BluetoothDevicePreference createBluetoothDevicePreference() {
+        Drawable drawable = mock(Drawable.class);
+        Pair<Drawable, String> pairs = new Pair<>(drawable, TEST_DEVICE_NAME);
+        when(mCachedDevice.getDrawableWithDescription()).thenReturn(pairs);
+        return new BluetoothDevicePreference(
+                        mContext,
+                        mCachedDevice,
+                        /* showDeviceWithoutNames= */ false,
+                        BluetoothDevicePreference.SortType.TYPE_DEFAULT);
     }
 }

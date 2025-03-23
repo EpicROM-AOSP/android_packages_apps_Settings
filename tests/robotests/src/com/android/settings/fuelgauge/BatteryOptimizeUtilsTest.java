@@ -128,6 +128,15 @@ public class BatteryOptimizeUtilsTest {
     }
 
     @Test
+    public void testGetAppOptimizationMode_unknownMode_returnOptimized() throws Exception {
+        when(mMockBackend.isAllowlisted(anyString(), anyInt())).thenReturn(true);
+        when(mMockAppOpsManager.checkOpNoThrow(anyInt(), anyInt(), anyString()))
+                .thenReturn(AppOpsManager.MODE_IGNORED);
+
+        assertThat(mBatteryOptimizeUtils.getAppOptimizationMode()).isEqualTo(MODE_UNRESTRICTED);
+    }
+
+    @Test
     public void testIsSystemOrDefaultApp_isSystemOrDefaultApp_returnTrue() {
         when(mMockBackend.isAllowlisted(anyString(), anyInt())).thenReturn(true);
         when(mMockBackend.isDefaultActiveApp(anyString(), anyInt())).thenReturn(true);
@@ -164,7 +173,7 @@ public class BatteryOptimizeUtilsTest {
         TimeUnit.SECONDS.sleep(1);
 
         verifySetAppOptimizationMode(AppOpsManager.MODE_IGNORED, /* allowListed */ false);
-        verify(mObserver).onChanged(DataChangeReason.UPDATE);
+        verify(mObserver).onChanged(mBatterySettingsStorage, DataChangeReason.UPDATE);
     }
 
     @Test
@@ -178,7 +187,7 @@ public class BatteryOptimizeUtilsTest {
         TimeUnit.SECONDS.sleep(1);
 
         verifySetAppOptimizationMode(AppOpsManager.MODE_ALLOWED, /* allowListed */ true);
-        verify(mObserver).onChanged(DataChangeReason.UPDATE);
+        verify(mObserver).onChanged(mBatterySettingsStorage, DataChangeReason.UPDATE);
     }
 
     @Test
@@ -192,7 +201,7 @@ public class BatteryOptimizeUtilsTest {
         TimeUnit.SECONDS.sleep(1);
 
         verifySetAppOptimizationMode(AppOpsManager.MODE_ALLOWED, /* allowListed */ false);
-        verify(mObserver).onChanged(DataChangeReason.UPDATE);
+        verify(mObserver).onChanged(mBatterySettingsStorage, DataChangeReason.UPDATE);
     }
 
     @Test
@@ -301,7 +310,7 @@ public class BatteryOptimizeUtilsTest {
         inOrder.verify(mMockBackend).isAllowlisted(PACKAGE_NAME, UID);
         inOrder.verify(mMockBackend).isSysAllowlisted(PACKAGE_NAME);
         verifyNoMoreInteractions(mMockBackend);
-        verify(mObserver).onChanged(DataChangeReason.DELETE);
+        verify(mObserver).onChanged(mBatterySettingsStorage, DataChangeReason.DELETE);
     }
 
     @Test
@@ -312,7 +321,7 @@ public class BatteryOptimizeUtilsTest {
                 /* isSystemOrDefaultApp */ false);
 
         verifySetAppOptimizationMode(AppOpsManager.MODE_ALLOWED, /* allowListed */ false);
-        verify(mObserver).onChanged(DataChangeReason.DELETE);
+        verify(mObserver).onChanged(mBatterySettingsStorage, DataChangeReason.DELETE);
     }
 
     @Test
@@ -323,7 +332,7 @@ public class BatteryOptimizeUtilsTest {
                 /* isSystemOrDefaultApp */ false);
 
         verifySetAppOptimizationMode(AppOpsManager.MODE_ALLOWED, /* allowListed */ false);
-        verify(mObserver).onChanged(DataChangeReason.DELETE);
+        verify(mObserver).onChanged(mBatterySettingsStorage, DataChangeReason.DELETE);
     }
 
     private void runTestForResetWithMode(

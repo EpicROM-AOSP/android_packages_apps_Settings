@@ -68,6 +68,8 @@ public abstract class BiometricEnrollBase extends InstrumentedActivity {
     public static final String EXTRA_FINISHED_ENROLL_FACE = "finished_enrolling_face";
     public static final String EXTRA_FINISHED_ENROLL_FINGERPRINT = "finished_enrolling_fingerprint";
     public static final String EXTRA_LAUNCHED_POSTURE_GUIDANCE = "launched_posture_guidance";
+    public static final String EXTRA_BIOMETRICS_AUTHENTICATED_SUCCESSFULLY =
+            "biometrics_authenticated_successfully";
 
     /**
      * Used by the choose fingerprint wizard to indicate the wizard is
@@ -122,6 +124,7 @@ public abstract class BiometricEnrollBase extends InstrumentedActivity {
      */
     public static final int ENROLL_NEXT_BIOMETRIC_REQUEST = 6;
     public static final int REQUEST_POSTURE_GUIDANCE = 7;
+    public static final int BIOMETRIC_AUTH_REQUEST = 8;
 
     protected boolean mLaunchedConfirmLock;
     protected boolean mLaunchedPostureGuidance;
@@ -145,8 +148,16 @@ public abstract class BiometricEnrollBase extends InstrumentedActivity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setTheme(SetupWizardUtils.getTheme(this, getIntent()));
-        ThemeHelper.trySetDynamicColor(this);
+
+        if (ThemeHelper.shouldApplyGlifExpressiveStyle(getApplicationContext())) {
+            if (!ThemeHelper.trySetSuwTheme(this)) {
+                setTheme(ThemeHelper.getSuwDefaultTheme(getApplicationContext()));
+                ThemeHelper.trySetDynamicColor(this);
+            }
+        } else {
+            setTheme(SetupWizardUtils.getTheme(this, getIntent()));
+            ThemeHelper.trySetDynamicColor(this);
+        }
         mChallenge = getIntent().getLongExtra(EXTRA_KEY_CHALLENGE, -1L);
         mSensorId = getIntent().getIntExtra(EXTRA_KEY_SENSOR_ID, -1);
         // Don't need to retrieve the HAT if it already exists. In some cases, the extras do not

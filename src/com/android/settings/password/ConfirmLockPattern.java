@@ -34,6 +34,7 @@ import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.CountDownTimer;
 import android.os.SystemClock;
+import android.os.UserHandle;
 import android.os.UserManager;
 import android.text.TextUtils;
 import android.util.Log;
@@ -54,6 +55,8 @@ import com.android.internal.widget.LockPatternView;
 import com.android.internal.widget.LockPatternView.Cell;
 import com.android.internal.widget.LockscreenCredential;
 import com.android.settings.R;
+import com.android.settings.SetupRedactionInterstitial;
+import com.android.settings.Utils;
 import com.android.settingslib.animation.AppearAnimationCreator;
 import com.android.settingslib.animation.AppearAnimationUtils;
 import com.android.settingslib.animation.DisappearAnimationUtils;
@@ -421,6 +424,12 @@ public class ConfirmLockPattern extends ConfirmDeviceCredentialBaseActivity {
                         CONFIRM_WORK_PROFILE_PATTERN_HEADER,
                         () -> getString(R.string.lockpassword_confirm_your_work_pattern_header));
             }
+            if (android.multiuser.Flags.showCustomUnlockTitleInsidePrivateProfile()
+                    && Utils.isPrivateProfile(mEffectiveUserId, getActivity())
+                    && !UserManager.get(getActivity())
+                    .isQuietModeEnabled(UserHandle.of(mEffectiveUserId))) {
+                return getString(R.string.private_space_confirm_your_pattern_header);
+            }
 
             return getString(R.string.lockpassword_confirm_your_pattern_header);
         }
@@ -751,6 +760,7 @@ public class ConfirmLockPattern extends ConfirmDeviceCredentialBaseActivity {
             Intent result = new Intent();
             if (mRemoteValidation && containsGatekeeperPasswordHandle(resultData)) {
                 result.putExtra(EXTRA_KEY_GK_PW_HANDLE, getGatekeeperPasswordHandle(resultData));
+                SetupRedactionInterstitial.setEnabled(getContext(), true);
             }
             mCredentialCheckResultTracker.setResult(/* matched= */ true, result,
                     /* timeoutMs= */ 0, mEffectiveUserId);

@@ -25,6 +25,7 @@ import androidx.preference.Preference;
 
 import com.android.settings.R;
 import com.android.settings.core.TogglePreferenceController;
+import com.android.settings.flags.Flags;
 
 import java.util.Calendar;
 import java.util.Date;
@@ -43,6 +44,11 @@ public class TimeFormatPreferenceController extends TogglePreferenceController {
     public TimeFormatPreferenceController(Context context, String key) {
         super(context, key);
         mDummyDate = Calendar.getInstance();
+        // This is a no-op implementation of UpdateTimeAndDateCallback to avoid a NPE when
+        // setTimeAndDateCallback() isn't called, e.g. for slices and other cases where the
+        // controller is instantiated outside of the context of the real Date & Time settings
+        // screen.
+        mUpdateTimeAndDateCallback  = (c) -> {};
     }
 
     /**
@@ -67,8 +73,10 @@ public class TimeFormatPreferenceController extends TogglePreferenceController {
         if (mIsFromSUW) {
             return DISABLED_DEPENDENT_SETTING;
         }
-        if (AutoTimeFormatPreferenceController.isAutoTimeFormatSelection(mContext)) {
-            return DISABLED_DEPENDENT_SETTING;
+        if (!Flags.revampToggles()) {
+            if (AutoTimeFormatPreferenceController.isAutoTimeFormatSelection(mContext)) {
+                return DISABLED_DEPENDENT_SETTING;
+            }
         }
         return AVAILABLE;
     }
@@ -125,7 +133,7 @@ public class TimeFormatPreferenceController extends TogglePreferenceController {
             timeFormatPreference = Intent.EXTRA_TIME_PREF_VALUE_USE_LOCALE_DEFAULT;
         } else {
             timeFormatPreference = is24Hour ? Intent.EXTRA_TIME_PREF_VALUE_USE_24_HOUR
-                : Intent.EXTRA_TIME_PREF_VALUE_USE_12_HOUR;
+                    : Intent.EXTRA_TIME_PREF_VALUE_USE_12_HOUR;
         }
         timeChanged.putExtra(Intent.EXTRA_TIME_PREF_24_HOUR_FORMAT, timeFormatPreference);
         context.sendBroadcast(timeChanged);
@@ -133,7 +141,7 @@ public class TimeFormatPreferenceController extends TogglePreferenceController {
 
     static void set24Hour(Context context, Boolean is24Hour) {
         String value = is24Hour == null ? null :
-            is24Hour ? HOURS_24 : HOURS_12;
+                is24Hour ? HOURS_24 : HOURS_12;
         Settings.System.putString(context.getContentResolver(),
                 Settings.System.TIME_12_24, value);
     }

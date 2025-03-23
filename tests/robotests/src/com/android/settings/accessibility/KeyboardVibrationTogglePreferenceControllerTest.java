@@ -26,14 +26,13 @@ import static com.google.common.truth.Truth.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.when;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import android.app.settings.SettingsEnums;
 import android.content.ContentResolver;
 import android.content.Context;
 import android.content.res.Resources;
-import android.os.vibrator.Flags;
 import android.platform.test.flag.junit.SetFlagsRule;
 import android.provider.Settings;
 
@@ -41,7 +40,6 @@ import androidx.preference.PreferenceScreen;
 import androidx.preference.SwitchPreference;
 import androidx.test.core.app.ApplicationProvider;
 
-import com.android.settings.R;
 import com.android.settings.testutils.FakeFeatureFactory;
 
 import org.junit.Before;
@@ -87,30 +85,22 @@ public class KeyboardVibrationTogglePreferenceControllerTest {
 
     @Test
     public void getAvailabilityStatus_featureSupported_available() {
-        mSetFlagsRule.enableFlags(Flags.FLAG_KEYBOARD_CATEGORY_ENABLED);
-        when(mResources.getBoolean(R.bool.config_keyboard_vibration_supported)).thenReturn(true);
-        when(mResources.getFloat(
-                com.android.internal.R.dimen.config_keyboardHapticFeedbackFixedAmplitude))
-                .thenReturn(0.8f);
+        when(mResources.getBoolean(
+                com.android.internal.R.bool.config_keyboardVibrationSettingsSupported))
+                .thenReturn(true);
 
         assertThat(mController.getAvailabilityStatus()).isEqualTo(AVAILABLE);
     }
 
     @Test
     public void getAvailabilityStatus_featureNotSupported_unavailable() {
-        mSetFlagsRule.enableFlags(Flags.FLAG_KEYBOARD_CATEGORY_ENABLED);
-        when(mResources.getBoolean(R.bool.config_keyboard_vibration_supported)).thenReturn(false);
+        when(mResources.getBoolean(
+                com.android.internal.R.bool.config_keyboardVibrationSettingsSupported))
+                .thenReturn(false);
 
         assertThat(mController.getAvailabilityStatus()).isEqualTo(UNSUPPORTED_ON_DEVICE);
     }
 
-    @Test
-    public void getAvailabilityStatus_keyboardCategoryDisabled_unavailable() {
-        mSetFlagsRule.disableFlags(Flags.FLAG_KEYBOARD_CATEGORY_ENABLED);
-        when(mResources.getBoolean(R.bool.config_keyboard_vibration_supported)).thenReturn(true);
-
-        assertThat(mController.getAvailabilityStatus()).isEqualTo(UNSUPPORTED_ON_DEVICE);
-    }
 
     @Test
     public void updateState_mainVibrateDisabled_shouldReturnFalseForCheckedAndEnabled() {

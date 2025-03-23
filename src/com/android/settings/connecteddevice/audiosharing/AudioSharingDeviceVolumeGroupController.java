@@ -16,8 +16,6 @@
 
 package com.android.settings.connecteddevice.audiosharing;
 
-import static com.android.settings.connecteddevice.audiosharing.AudioSharingUtils.SETTINGS_KEY_FALLBACK_DEVICE_GROUP_ID;
-
 import android.annotation.IntRange;
 import android.bluetooth.BluetoothCsipSetCoordinator;
 import android.bluetooth.BluetoothDevice;
@@ -63,7 +61,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 public class AudioSharingDeviceVolumeGroupController extends AudioSharingBasePreferenceController
         implements DevicePreferenceCallback {
-    private static final String TAG = "AudioSharingDeviceVolumeGroupController";
+    private static final String TAG = "AudioSharingVolCtlr";
     private static final String KEY = "audio_sharing_device_volume_group";
 
     @Nullable private final LocalBluetoothManager mBtManager;
@@ -91,11 +89,11 @@ public class AudioSharingDeviceVolumeGroupController extends AudioSharingBasePre
                                     ? null
                                     : mBtManager.getCachedDeviceManager().findDevice(device);
                     if (cachedDevice == null) return;
-                    int groupId = AudioSharingUtils.getGroupId(cachedDevice);
+                    int groupId = BluetoothUtils.getGroupId(cachedDevice);
                     mValueMap.put(groupId, volume);
                     for (AudioSharingDeviceVolumePreference preference : mVolumePreferences) {
                         if (preference.getCachedDevice() != null
-                                && AudioSharingUtils.getGroupId(preference.getCachedDevice())
+                                && BluetoothUtils.getGroupId(preference.getCachedDevice())
                                         == groupId) {
                             // If the callback return invalid volume, try to
                             // get the volume from AudioManager.STREAM_MUSIC
@@ -134,7 +132,12 @@ public class AudioSharingDeviceVolumeGroupController extends AudioSharingBasePre
 
                 @Override
                 public void onSourceAdded(
-                        @NonNull BluetoothDevice sink, int sourceId, int reason) {}
+                        @NonNull BluetoothDevice sink, int sourceId, int reason) {
+                    Log.d(TAG, "onSourceAdded: update volume list.");
+                    if (mBluetoothDeviceUpdater != null) {
+                        mBluetoothDeviceUpdater.forceUpdate();
+                    }
+                }
 
                 @Override
                 public void onSourceAddFailed(
@@ -167,14 +170,7 @@ public class AudioSharingDeviceVolumeGroupController extends AudioSharingBasePre
                 public void onReceiveStateChanged(
                         @NonNull BluetoothDevice sink,
                         int sourceId,
-                        @NonNull BluetoothLeBroadcastReceiveState state) {
-                    if (BluetoothUtils.isConnected(state)) {
-                        Log.d(TAG, "onReceiveStateChanged: synced, update volume list.");
-                        if (mBluetoothDeviceUpdater != null) {
-                            mBluetoothDeviceUpdater.forceUpdate();
-                        }
-                    }
-                }
+                        @NonNull BluetoothLeBroadcastReceiveState state) {}
             };
 
     public AudioSharingDeviceVolumeGroupController(Context context) {
@@ -256,7 +252,7 @@ public class AudioSharingDeviceVolumeGroupController extends AudioSharingBasePre
             volumePref.setOrder(getPreferenceOrderForDevice(cachedDevice));
             mVolumePreferences.add(volumePref);
             if (volumePref.getProgress() > 0) return;
-            int volume = mValueMap.getOrDefault(AudioSharingUtils.getGroupId(cachedDevice), -1);
+            int volume = mValueMap.getOrDefault(BluetoothUtils.getGroupId(cachedDevice), -1);
             // If the volume is invalid, try to get the volume from AudioManager.STREAM_MUSIC
             int finalVolume = getAudioVolumeIfNeeded(volume);
             Log.d(
@@ -369,7 +365,7 @@ public class AudioSharingDeviceVolumeGroupController extends AudioSharingBasePre
             mVolumeControl.registerCallback(mExecutor, mVolumeControlCallback);
             mBluetoothDeviceUpdater.registerCallback();
             mContentResolver.registerContentObserver(
-                    Settings.Secure.getUriFor(SETTINGS_KEY_FALLBACK_DEVICE_GROUP_ID),
+                    Settings.Secure.getUriFor(BluetoothUtils.getPrimaryGroupIdUriForBroadcast()),
                     false,
                     mSettingsObserver);
             mCallbacksRegistered.set(true);
@@ -415,10 +411,10 @@ public class AudioSharingDeviceVolumeGroupController extends AudioSharingBasePre
     }
 
     private int getPreferenceOrderForDevice(@NonNull CachedBluetoothDevice cachedDevice) {
-        int groupId = AudioSharingUtils.getGroupId(cachedDevice);
+        int groupId = BluetoothUtils.getGroupId(cachedDevice);
         // The fallback device rank first among the audio sharing device list.
         return (groupId != BluetoothCsipSetCoordinator.GROUP_ID_INVALID
-                        && groupId == AudioSharingUtils.getFallbackActiveGroupId(mContext))
+                && groupId == BluetoothUtils.getPrimaryGroupIdForBroadcast(mContentResolver))
                 ? 0
                 : 1;
     }

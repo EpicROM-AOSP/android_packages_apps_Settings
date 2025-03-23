@@ -35,7 +35,7 @@ import com.android.settings.notification.zen.ZenModeSettings;
 
 import java.util.Objects;
 
-
+// TODO: b/368247671 - Remove entirely when inlining MODES_UI
 public class DndConditionCardController implements ConditionalCardController {
     static final int ID = Objects.hash("DndConditionCardController");
 
@@ -105,7 +105,8 @@ public class DndConditionCardController implements ConditionalCardController {
                         + mAppContext.getText(R.string.condition_zen_title))
                 .setTitleText(mAppContext.getText(R.string.condition_zen_title).toString())
                 .setSummaryText(getSummary())
-                .setIconDrawable(mAppContext.getDrawable(R.drawable.ic_do_not_disturb_on_24dp))
+                .setIconDrawable(mAppContext.getDrawable(
+                        com.android.settingslib.R.drawable.ic_do_not_disturb_on_24dp))
                 .setViewType(ConditionContextualCardRenderer.VIEW_TYPE_HALF_WIDTH)
                 .build();
     }

@@ -96,6 +96,15 @@ public class AudioSharingConfirmDialogFragmentTest {
     }
 
     @Test
+    public void onCreateDialog_unattachedFragment_dialogNotExist() {
+        mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
+        AudioSharingConfirmDialogFragment.show(new Fragment());
+        shadowMainLooper().idle();
+        AlertDialog dialog = ShadowAlertDialogCompat.getLatestAlertDialog();
+        assertThat(dialog).isNull();
+    }
+
+    @Test
     public void onCreateDialog_flagOn_showDialog() {
         mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
         AudioSharingConfirmDialogFragment.show(mParent);
@@ -106,7 +115,7 @@ public class AudioSharingConfirmDialogFragmentTest {
     }
 
     @Test
-    public void onCreateDialog_clickOk_dialogDismiss() {
+    public void onCreateDialog_clickClose_dialogDismiss() {
         mSetFlagsRule.enableFlags(Flags.FLAG_ENABLE_LE_AUDIO_SHARING);
         AudioSharingConfirmDialogFragment.show(mParent);
         shadowMainLooper().idle();

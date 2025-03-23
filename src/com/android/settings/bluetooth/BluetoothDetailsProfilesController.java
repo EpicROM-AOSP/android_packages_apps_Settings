@@ -18,11 +18,11 @@ package com.android.settings.bluetooth;
 
 import static android.bluetooth.BluetoothDevice.METADATA_MODEL_NAME;
 
+import android.app.settings.SettingsEnums;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothProfile;
 import android.content.Context;
 import android.os.SystemProperties;
-import android.provider.DeviceConfig;
 import android.sysprop.BluetoothProperties;
 import android.text.TextUtils;
 import android.util.Log;
@@ -36,14 +36,12 @@ import androidx.preference.SwitchPreferenceCompat;
 import androidx.preference.TwoStatePreference;
 
 import com.android.settings.R;
-import com.android.settings.core.SettingsUIDeviceConfig;
 import com.android.settings.flags.Flags;
 import com.android.settings.overlay.FeatureFactory;
 import com.android.settingslib.bluetooth.A2dpProfile;
 import com.android.settingslib.bluetooth.BluetoothUtils;
 import com.android.settingslib.bluetooth.CachedBluetoothDevice;
 import com.android.settingslib.bluetooth.HeadsetProfile;
-import com.android.settingslib.bluetooth.HearingAidProfile;
 import com.android.settingslib.bluetooth.LeAudioProfile;
 import com.android.settingslib.bluetooth.LocalBluetoothManager;
 import com.android.settingslib.bluetooth.LocalBluetoothProfile;
@@ -55,7 +53,9 @@ import com.android.settingslib.core.lifecycle.Lifecycle;
 import com.android.settingslib.utils.ThreadUtils;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -68,14 +68,13 @@ import java.util.concurrent.atomic.AtomicReference;
 public class BluetoothDetailsProfilesController extends BluetoothDetailsController
         implements Preference.OnPreferenceClickListener,
         LocalBluetoothProfileManager.ServiceListener {
+    public static final String HIGH_QUALITY_AUDIO_PREF_TAG = "A2dpProfileHighQualityAudio";
+
     private static final String TAG = "BtDetailsProfilesCtrl";
 
     private static final String KEY_PROFILES_GROUP = "bluetooth_profiles";
     private static final String KEY_BOTTOM_PREFERENCE = "bottom_preference";
     private static final int ORDINAL = 99;
-
-    @VisibleForTesting
-    static final String HIGH_QUALITY_AUDIO_PREF_TAG = "A2dpProfileHighQualityAudio";
 
     private static final String ENABLE_DUAL_MODE_AUDIO =
             "persist.bluetooth.enable_dual_mode_audio";
@@ -84,34 +83,58 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
     private static final boolean LE_AUDIO_TOGGLE_VISIBLE_DEFAULT_VALUE = true;
     private static final String LE_AUDIO_TOGGLE_VISIBLE_PROPERTY =
             "persist.bluetooth.leaudio.toggle_visible";
+    private static final String BYPASS_LE_AUDIO_ALLOWLIST_PROPERTY =
+            "persist.bluetooth.leaudio.bypass_allow_list";
 
-    private final AtomicReference<Set<String>> mInvisiblePreferenceKey = new AtomicReference<>();
+    private Set<String> mInvisibleProfiles = Collections.emptySet();
+    private final AtomicReference<Set<String>> mAdditionalInvisibleProfiles =
+            new AtomicReference<>();
 
     private LocalBluetoothManager mManager;
     private LocalBluetoothProfileManager mProfileManager;
     private CachedBluetoothDevice mCachedDevice;
-    private List<CachedBluetoothDevice> mAllOfCachedDevices;
+    private Set<CachedBluetoothDevice> mCachedDeviceGroup;
     private Map<String, List<CachedBluetoothDevice>> mProfileDeviceMap =
             new HashMap<String, List<CachedBluetoothDevice>>();
-    private boolean mIsLeContactSharingEnabled = false;
     private boolean mIsLeAudioToggleEnabled = false;
+    private boolean mIsLeAudioOnlyDevice = false;
+    private boolean mHasExtraSpace;
 
     @VisibleForTesting
     PreferenceCategory mProfilesContainer;
 
-    public BluetoothDetailsProfilesController(Context context, PreferenceFragmentCompat fragment,
-            LocalBluetoothManager manager, CachedBluetoothDevice device, Lifecycle lifecycle) {
+    public BluetoothDetailsProfilesController(
+            Context context,
+            PreferenceFragmentCompat fragment,
+            LocalBluetoothManager manager,
+            CachedBluetoothDevice device,
+            Lifecycle lifecycle) {
         super(context, fragment, device, lifecycle);
         mManager = manager;
         mProfileManager = mManager.getProfileManager();
         mCachedDevice = device;
-        mAllOfCachedDevices = Utils.getAllOfCachedBluetoothDevices(mManager, mCachedDevice);
-        lifecycle.addObserver(this);
+        mCachedDeviceGroup = Utils.findAllCachedBluetoothDevicesByGroupId(mManager, mCachedDevice);
+    }
+
+    /** Sets the profiles to be hidden. */
+    public void setInvisibleProfiles(List<String> invisibleProfiles) {
+        if (invisibleProfiles != null) {
+            mInvisibleProfiles = Set.copyOf(invisibleProfiles);
+        }
+    }
+
+    /** Sets whether it should show an extra padding on top of the preference. */
+    public void setHasExtraSpace(boolean hasExtraSpace) {
+        if (hasExtraSpace) {
+            mProfilesContainer.setLayoutResource(R.layout.preference_bluetooth_profile_category);
+        } else {
+            mProfilesContainer.setLayoutResource(R.layout.preference_category_bluetooth_no_padding);
+        }
     }
 
     @Override
     protected void init(PreferenceScreen screen) {
-        mProfilesContainer = (PreferenceCategory)screen.findPreference(getPreferenceKey());
+        mProfilesContainer = (PreferenceCategory) screen.findPreference(getPreferenceKey());
         mProfilesContainer.setLayoutResource(R.layout.preference_bluetooth_profile_category);
         // Call refresh here even though it will get called later in onResume, to avoid the
         // list of switches appearing to "pop" into the page.
@@ -173,16 +196,20 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
             boolean isBusy = deviceList != null
                     && deviceList.stream().anyMatch(item -> item.isBusy());
             profilePref.setEnabled(!isBusy);
-        } else if (profile instanceof PbapServerProfile
-                && isLeAudioEnabled
-                && !mIsLeContactSharingEnabled) {
-            profilePref.setEnabled(false);
         } else {
             profilePref.setEnabled(!mCachedDevice.isBusy());
         }
 
         if (profile instanceof LeAudioProfile) {
-            profilePref.setVisible(mIsLeAudioToggleEnabled);
+            boolean showLeAudioToggle = mIsLeAudioToggleEnabled;
+            if (Flags.hideLeAudioToggleForLeAudioOnlyDevice() && mIsLeAudioOnlyDevice) {
+                showLeAudioToggle = false;
+                Log.d(
+                        TAG,
+                        "Hide LeAudio toggle for LeAudio-only Device: "
+                                + mCachedDevice.getDevice().getAnonymizedAddress());
+            }
+            profilePref.setVisible(showLeAudioToggle);
         }
 
         if (profile instanceof MapProfile) {
@@ -301,19 +328,18 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
      * Helper to get the list of connectable and special profiles.
      */
     private List<LocalBluetoothProfile> getProfiles() {
-        List<LocalBluetoothProfile> result = new ArrayList<LocalBluetoothProfile>();
+        List<LocalBluetoothProfile> result = new ArrayList<>();
         mProfileDeviceMap.clear();
-        if (mAllOfCachedDevices == null || mAllOfCachedDevices.isEmpty()) {
+        if (mCachedDeviceGroup == null || mCachedDeviceGroup.isEmpty()) {
             return result;
         }
-        for (CachedBluetoothDevice cachedItem : mAllOfCachedDevices) {
-            List<LocalBluetoothProfile> tmpResult = cachedItem.getConnectableProfiles();
+        for (CachedBluetoothDevice cachedItem : mCachedDeviceGroup) {
+            List<LocalBluetoothProfile> tmpResult = cachedItem.getUiAccessibleProfiles();
             for (LocalBluetoothProfile profile : tmpResult) {
                 if (mProfileDeviceMap.containsKey(profile.toString())) {
                     mProfileDeviceMap.get(profile.toString()).add(cachedItem);
                 } else {
-                    List<CachedBluetoothDevice> tmpCachedDeviceList =
-                            new ArrayList<CachedBluetoothDevice>();
+                    List<CachedBluetoothDevice> tmpCachedDeviceList = new ArrayList<>();
                     tmpCachedDeviceList.add(cachedItem);
                     mProfileDeviceMap.put(profile.toString(), tmpCachedDeviceList);
                     result.add(profile);
@@ -326,12 +352,14 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
         // Only provide PBAP cabability if the client device has requested PBAP.
         if (pbapPermission != BluetoothDevice.ACCESS_UNKNOWN) {
             final PbapServerProfile psp = mManager.getProfileManager().getPbapProfile();
-            result.add(psp);
+            if (psp != null) {
+                result.add(psp);
+            }
         }
 
         final MapProfile mapProfile = mManager.getProfileManager().getMapProfile();
         final int mapPermission = device.getMessageAccessPermission();
-        if (mapPermission != BluetoothDevice.ACCESS_UNKNOWN) {
+        if (mapPermission != BluetoothDevice.ACCESS_UNKNOWN && mapProfile != null) {
             result.add(mapProfile);
         }
 
@@ -345,8 +373,27 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
             result.remove(mManager.getProfileManager().getA2dpProfile());
             result.remove(mManager.getProfileManager().getHeadsetProfile());
         }
+        boolean hearingAidSupported = result.contains(
+                mManager.getProfileManager().getHearingAidProfile());
+        // Remove hearing aids toggle anyway since showing the toggle will confuse users
+        if (hearingAidSupported) {
+            result.remove(mManager.getProfileManager().getHearingAidProfile());
+        }
+        if (leAudioSupported && !classicAudioSupported && !hearingAidSupported) {
+            mIsLeAudioOnlyDevice = true;
+        }
         Log.d(TAG, "getProfiles:Map:" + mProfileDeviceMap);
         return result;
+    }
+
+    private boolean isCurrentDeviceInOrByPassAllowList() {
+        if (!SystemProperties.getBoolean(LE_AUDIO_CONNECTION_BY_DEFAULT_PROPERTY, true)) {
+            return false;
+        }
+        return SystemProperties.getBoolean(BYPASS_LE_AUDIO_ALLOWLIST_PROPERTY, false)
+                || isModelNameInAllowList(
+                BluetoothUtils.getStringMetaData(
+                        mCachedDevice.getDevice(), METADATA_MODEL_NAME));
     }
 
     /**
@@ -359,6 +406,11 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
             Log.e(TAG, "There is no the LE profile or no device in mProfileDeviceMap. Do nothing.");
             return;
         }
+
+        mMetricsFeatureProvider.action(
+                mContext,
+                SettingsEnums.ACTION_BLUETOOTH_PROFILE_LE_AUDIO_OFF,
+                isCurrentDeviceInOrByPassAllowList());
 
         LocalBluetoothProfile asha = mProfileManager.getHearingAidProfile();
         LocalBluetoothProfile broadcastAssistant =
@@ -397,6 +449,11 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
             Log.e(TAG, "There is no the LE profile or no device in mProfileDeviceMap. Do nothing.");
             return;
         }
+
+        mMetricsFeatureProvider.action(
+                mContext,
+                SettingsEnums.ACTION_BLUETOOTH_PROFILE_LE_AUDIO_ON,
+                isCurrentDeviceInOrByPassAllowList());
 
         if (!SystemProperties.getBoolean(ENABLE_DUAL_MODE_AUDIO, false)) {
             Log.i(TAG, "Disabling classic audio profiles because dual mode is disabled");
@@ -497,7 +554,7 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
 
     @Override
     public void onPause() {
-        for (CachedBluetoothDevice item : mAllOfCachedDevices) {
+        for (CachedBluetoothDevice item : mCachedDeviceGroup) {
             item.unregisterCallback(this);
         }
         mProfileManager.removeServiceListener(this);
@@ -506,53 +563,30 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
     @Override
     public void onResume() {
         updateLeAudioConfig();
-        for (CachedBluetoothDevice item : mAllOfCachedDevices) {
+        for (CachedBluetoothDevice item : mCachedDeviceGroup) {
             item.registerCallback(this);
         }
         mProfileManager.addServiceListener(this);
         refresh();
     }
 
-    private boolean isLeAudioOnlyDevice() {
-        if (mCachedDevice.getProfiles().stream()
-                .noneMatch(profile -> profile instanceof LeAudioProfile)) {
-            return false;
-        }
-        return mCachedDevice.getProfiles().stream()
-                .noneMatch(
-                        profile ->
-                                profile instanceof HearingAidProfile
-                                        || profile instanceof A2dpProfile
-                                        || profile instanceof HeadsetProfile);
-    }
-
     private void updateLeAudioConfig() {
-        mIsLeContactSharingEnabled = DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_SETTINGS_UI,
-                SettingsUIDeviceConfig.BT_LE_AUDIO_CONTACT_SHARING_ENABLED, true);
         boolean isLeAudioToggleVisible = SystemProperties.getBoolean(
                 LE_AUDIO_TOGGLE_VISIBLE_PROPERTY, LE_AUDIO_TOGGLE_VISIBLE_DEFAULT_VALUE);
         boolean isLeEnabledByDefault =
                 SystemProperties.getBoolean(LE_AUDIO_CONNECTION_BY_DEFAULT_PROPERTY, true);
         mIsLeAudioToggleEnabled = isLeAudioToggleVisible || isLeEnabledByDefault;
-        if (Flags.hideLeAudioToggleForLeAudioOnlyDevice() && isLeAudioOnlyDevice()) {
-            mIsLeAudioToggleEnabled = false;
-            Log.d(
-                    TAG,
-                    "Hide LeAudio toggle for LeAudio-only Device: "
-                            + mCachedDevice.getDevice().getAnonymizedAddress());
-        }
-        Log.d(TAG, "BT_LE_AUDIO_CONTACT_SHARING_ENABLED:" + mIsLeContactSharingEnabled
-                + ", LE_AUDIO_TOGGLE_VISIBLE_PROPERTY:" + isLeAudioToggleVisible
+        Log.d(TAG, "LE_AUDIO_TOGGLE_VISIBLE_PROPERTY:" + isLeAudioToggleVisible
                 + ", LE_AUDIO_CONNECTION_BY_DEFAULT_PROPERTY:" + isLeEnabledByDefault);
     }
 
     @Override
     public void onDeviceAttributesChanged() {
-        for (CachedBluetoothDevice item : mAllOfCachedDevices) {
+        for (CachedBluetoothDevice item : mCachedDeviceGroup) {
             item.unregisterCallback(this);
         }
-        mAllOfCachedDevices = Utils.getAllOfCachedBluetoothDevices(mManager, mCachedDevice);
-        for (CachedBluetoothDevice item : mAllOfCachedDevices) {
+        mCachedDeviceGroup = Utils.findAllCachedBluetoothDevicesByGroupId(mManager, mCachedDevice);
+        for (CachedBluetoothDevice item : mCachedDeviceGroup) {
             item.registerCallback(this);
         }
 
@@ -575,19 +609,15 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
      */
     @Override
     protected void refresh() {
-        if (Flags.enableBluetoothProfileToggleVisibilityChecker()) {
-            ThreadUtils.postOnBackgroundThread(
-                    () -> {
-                        mInvisiblePreferenceKey.set(
-                                FeatureFactory.getFeatureFactory()
-                                        .getBluetoothFeatureProvider()
-                                        .getInvisibleProfilePreferenceKeys(
-                                                mContext, mCachedDevice.getDevice()));
-                        ThreadUtils.postOnMainThread(this::refreshUi);
-                    });
-        } else {
-            refreshUi();
-        }
+        ThreadUtils.postOnBackgroundThread(
+                () -> {
+                    mAdditionalInvisibleProfiles.set(
+                            FeatureFactory.getFeatureFactory()
+                                    .getBluetoothFeatureProvider()
+                                    .getInvisibleProfilePreferenceKeys(
+                                            mContext, mCachedDevice.getDevice()));
+                    ThreadUtils.postOnMainThread(this::refreshUi);
+                });
     }
 
     private void refreshUi() {
@@ -614,7 +644,11 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
         Preference preference = mProfilesContainer.findPreference(KEY_BOTTOM_PREFERENCE);
         if (preference == null) {
             preference = new Preference(mContext);
-            preference.setLayoutResource(R.layout.preference_bluetooth_profile_category);
+            if (mHasExtraSpace) {
+                preference.setLayoutResource(R.layout.preference_bluetooth_profile_category);
+            } else {
+                preference.setLayoutResource(R.layout.preference_category_bluetooth_no_padding);
+            }
             preference.setEnabled(false);
             preference.setKey(KEY_BOTTOM_PREFERENCE);
             preference.setOrder(ORDINAL);
@@ -622,14 +656,15 @@ public class BluetoothDetailsProfilesController extends BluetoothDetailsControll
             mProfilesContainer.addPreference(preference);
         }
 
-        if (Flags.enableBluetoothProfileToggleVisibilityChecker()) {
-            Set<String> invisibleKeys = mInvisiblePreferenceKey.get();
-            if (invisibleKeys != null) {
-                for (int i = 0; i < mProfilesContainer.getPreferenceCount(); ++i) {
-                    Preference pref = mProfilesContainer.getPreference(i);
-                    pref.setVisible(pref.isVisible() && !invisibleKeys.contains(pref.getKey()));
-                }
-            }
+        Set<String> additionalInvisibleProfiles = mAdditionalInvisibleProfiles.get();
+        HashSet<String> combinedInvisibleProfiles = new HashSet<>(mInvisibleProfiles);
+        if (additionalInvisibleProfiles != null) {
+            combinedInvisibleProfiles.addAll(additionalInvisibleProfiles);
+        }
+        Log.i(TAG, "Invisible profiles: " + combinedInvisibleProfiles);
+        for (int i = 0; i < mProfilesContainer.getPreferenceCount(); ++i) {
+            Preference pref = mProfilesContainer.getPreference(i);
+            pref.setVisible(pref.isVisible() && !combinedInvisibleProfiles.contains(pref.getKey()));
         }
     }
 

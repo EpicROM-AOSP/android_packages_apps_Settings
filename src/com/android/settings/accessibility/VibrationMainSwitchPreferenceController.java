@@ -23,6 +23,7 @@ import android.content.Context;
 import android.database.ContentObserver;
 import android.net.Uri;
 import android.os.Handler;
+import android.os.Looper;
 import android.os.VibrationAttributes;
 import android.os.Vibrator;
 import android.provider.Settings;
@@ -40,6 +41,7 @@ import com.android.settingslib.core.lifecycle.events.OnStop;
  * will disable the entire settings screen once the settings is turned OFF. All device haptics will
  * be disabled by this setting, except the flagged alerts and accessibility touch feedback.
  */
+// LINT.IfChange
 public class VibrationMainSwitchPreferenceController extends SettingsMainSwitchPreferenceController
         implements LifecycleObserver, OnStart, OnStop {
 
@@ -49,7 +51,8 @@ public class VibrationMainSwitchPreferenceController extends SettingsMainSwitchP
     public VibrationMainSwitchPreferenceController(Context context, String preferenceKey) {
         super(context, preferenceKey);
         mVibrator = context.getSystemService(Vibrator.class);
-        mSettingObserver = new ContentObserver(new Handler(/* async= */ true)) {
+        Handler handler = Looper.myLooper() != null ? new Handler(/* async= */ true) : null;
+        mSettingObserver = new ContentObserver(handler) {
             @Override
             public void onChange(boolean selfChange, Uri uri) {
                 updateState(mSwitchPreference);
@@ -104,3 +107,4 @@ public class VibrationMainSwitchPreferenceController extends SettingsMainSwitchP
         return R.string.menu_key_accessibility;
     }
 }
+// LINT.ThenChange(VibrationMainSwitchPreference.kt)

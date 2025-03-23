@@ -29,6 +29,7 @@ import android.content.ContentValues;
 import android.content.Context;
 import android.content.res.Resources;
 import android.graphics.drawable.Drawable;
+import android.os.Bundle;
 import android.os.LocaleList;
 import android.text.format.DateUtils;
 
@@ -57,11 +58,13 @@ public final class BatteryUsageBreakdownControllerTest {
     private static final String PREF_KEY = "pref_key";
     private static final String PREF_KEY2 = "pref_key2";
     private static final String PREF_SUMMARY = "fake preference summary";
-    private static final long TIME_LESS_THAN_HALF_MINUTE  = DateUtils.MINUTE_IN_MILLIS / 2  - 1;
+    private static final String KEY_SPINNER_POSITION = "spinner_position";
+    private static final int ENTRY_PREF_ORDER_OFFSET = 100;
+    private static final long TIME_LESS_THAN_HALF_MINUTE = DateUtils.MINUTE_IN_MILLIS / 2 - 1;
 
     @Mock private InstrumentedPreferenceFragment mFragment;
     @Mock private SettingsActivity mSettingsActivity;
-    @Mock private PreferenceGroup mAppListPreferenceGroup;
+    @Mock private PreferenceGroup mRootPreferenceGroup;
     @Mock private Drawable mDrawable;
     @Mock private BatteryHistEntry mBatteryHistEntry;
     @Mock private AnomalyAppItemPreference mAnomalyAppItemPreference;
@@ -88,7 +91,7 @@ public final class BatteryUsageBreakdownControllerTest {
                 .when(mFeatureFactory.powerUsageFeatureProvider)
                 .getHideApplicationSet();
         mBatteryUsageBreakdownController = createController();
-        mBatteryUsageBreakdownController.mAppListPreferenceGroup = mAppListPreferenceGroup;
+        mBatteryUsageBreakdownController.mRootPreferenceGroup = mRootPreferenceGroup;
         mBatteryDiffEntry =
                 new BatteryDiffEntry(
                         mContext,
@@ -128,7 +131,7 @@ public final class BatteryUsageBreakdownControllerTest {
         BatteryDiffEntry.sResourceCache.put(
                 "fakeBatteryDiffEntryKey",
                 new BatteryEntry.NameAndIcon("fakeName", /* icon= */ null, /* iconId= */ 1));
-        doReturn(mAnomalyAppItemPreference).when(mAppListPreferenceGroup).findPreference(PREF_KEY);
+        doReturn(mAnomalyAppItemPreference).when(mRootPreferenceGroup).findPreference(PREF_KEY);
     }
 
     @Test
@@ -145,17 +148,26 @@ public final class BatteryUsageBreakdownControllerTest {
     @Test
     public void onDestroy_removeAllPreferenceFromPreferenceGroup() {
         mBatteryUsageBreakdownController.onDestroy();
-        verify(mAppListPreferenceGroup).removeAll();
+        verify(mRootPreferenceGroup).removeAll();
+    }
+
+    @Test
+    public void onSaveInstanceState_returnExpectedResult() {
+        mBatteryUsageBreakdownController.mSpinnerPosition = 1;
+        final Bundle savedInstanceState = new Bundle();
+        mBatteryUsageBreakdownController.onSaveInstanceState(savedInstanceState);
+
+        assertThat(savedInstanceState.getInt(KEY_SPINNER_POSITION)).isEqualTo(1);
     }
 
     @Test
     public void addAllPreferences_addAllPreferences() {
         final String appLabel = "fake app label";
-        doReturn(1).when(mAppListPreferenceGroup).getPreferenceCount();
+        doReturn(1).when(mRootPreferenceGroup).getPreferenceCount();
         doReturn(mDrawable).when(mBatteryDiffEntry).getAppIcon();
         doReturn(appLabel).when(mBatteryDiffEntry).getAppLabel();
         doReturn(PREF_KEY).when(mBatteryDiffEntry).getKey();
-        doReturn(null).when(mAppListPreferenceGroup).findPreference(PREF_KEY);
+        doReturn(null).when(mRootPreferenceGroup).findPreference(PREF_KEY);
         doReturn(false).when(mBatteryDiffEntry).validForRestriction();
 
         mBatteryUsageBreakdownController.addAllPreferences();
@@ -166,11 +178,11 @@ public final class BatteryUsageBreakdownControllerTest {
                         mBatteryUsageBreakdownController.mPreferenceCache.get(PREF_KEY);
         assertThat(pref).isNotNull();
         // Verifies the added preference configuration.
-        verify(mAppListPreferenceGroup).addPreference(pref);
+        verify(mRootPreferenceGroup).addPreference(pref);
         assertThat(pref.getKey()).isEqualTo(PREF_KEY);
         assertThat(pref.getTitle().toString()).isEqualTo(appLabel);
         assertThat(pref.getIcon()).isEqualTo(mDrawable);
-        assertThat(pref.getOrder()).isEqualTo(1);
+        assertThat(pref.getOrder()).isEqualTo(ENTRY_PREF_ORDER_OFFSET + 1);
         assertThat(pref.getBatteryDiffEntry()).isSameInstanceAs(mBatteryDiffEntry);
         assertThat(pref.isSingleLineTitle()).isTrue();
         assertThat(pref.isSelectable()).isFalse();
@@ -179,20 +191,20 @@ public final class BatteryUsageBreakdownControllerTest {
     @Test
     public void addPreferenceToScreen_alreadyInScreen_notAddPreferenceAgain() {
         final String appLabel = "fake app label";
-        doReturn(1).when(mAppListPreferenceGroup).getPreferenceCount();
+        doReturn(1).when(mRootPreferenceGroup).getPreferenceCount();
         doReturn(mDrawable).when(mBatteryDiffEntry).getAppIcon();
         doReturn(appLabel).when(mBatteryDiffEntry).getAppLabel();
         doReturn(PREF_KEY).when(mBatteryDiffEntry).getKey();
 
         mBatteryUsageBreakdownController.addAllPreferences();
 
-        verify(mAppListPreferenceGroup, never()).addPreference(any());
+        verify(mRootPreferenceGroup, never()).addPreference(any());
     }
 
     @Test
     public void removeAndCacheAllUnusedPreferences_removePref_buildCacheAndRemoveAllPreference() {
-        doReturn(1).when(mAppListPreferenceGroup).getPreferenceCount();
-        doReturn(mAnomalyAppItemPreference).when(mAppListPreferenceGroup).getPreference(0);
+        doReturn(1).when(mRootPreferenceGroup).getPreferenceCount();
+        doReturn(mAnomalyAppItemPreference).when(mRootPreferenceGroup).getPreference(0);
         doReturn(PREF_KEY2).when(mBatteryHistEntry).getKey();
         doReturn(PREF_KEY).when(mAnomalyAppItemPreference).getKey();
         // Ensures the testing data is correct.
@@ -202,13 +214,13 @@ public final class BatteryUsageBreakdownControllerTest {
 
         assertThat(mBatteryUsageBreakdownController.mPreferenceCache.get(PREF_KEY))
                 .isEqualTo(mAnomalyAppItemPreference);
-        verify(mAppListPreferenceGroup).removePreference(mAnomalyAppItemPreference);
+        verify(mRootPreferenceGroup).removePreference(mAnomalyAppItemPreference);
     }
 
     @Test
     public void removeAndCacheAllUnusedPreferences_keepPref_KeepAllPreference() {
-        doReturn(1).when(mAppListPreferenceGroup).getPreferenceCount();
-        doReturn(mAnomalyAppItemPreference).when(mAppListPreferenceGroup).getPreference(0);
+        doReturn(1).when(mRootPreferenceGroup).getPreferenceCount();
+        doReturn(mAnomalyAppItemPreference).when(mRootPreferenceGroup).getPreference(0);
         doReturn(PREF_KEY).when(mBatteryDiffEntry).getKey();
         doReturn(PREF_KEY).when(mAnomalyAppItemPreference).getKey();
         // Ensures the testing data is correct.
@@ -216,15 +228,13 @@ public final class BatteryUsageBreakdownControllerTest {
 
         mBatteryUsageBreakdownController.removeAndCacheAllUnusedPreferences();
 
-        verify(mAppListPreferenceGroup, never()).removePreference(any());
+        verify(mRootPreferenceGroup, never()).removePreference(any());
         assertThat(mBatteryUsageBreakdownController.mPreferenceCache).isEmpty();
     }
 
     @Test
     public void handlePreferenceTreeClick_notPowerGaugePreference_returnFalse() {
-        assertThat(
-                        mBatteryUsageBreakdownController.handlePreferenceTreeClick(
-                                mAppListPreferenceGroup))
+        assertThat(mBatteryUsageBreakdownController.handlePreferenceTreeClick(mRootPreferenceGroup))
                 .isFalse();
 
         verify(mMetricsFeatureProvider, never())

@@ -76,7 +76,6 @@ public class ToggleSubscriptionDialogActivity extends SubscriptionActionDialogAc
         Intent intent = new Intent(context, ToggleSubscriptionDialogActivity.class);
         intent.putExtra(ARG_SUB_ID, subId);
         intent.putExtra(ARG_enable, enable);
-        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         return intent;
     }
 
@@ -253,8 +252,8 @@ public class ToggleSubscriptionDialogActivity extends SubscriptionActionDialogAc
                 mSwitchToEuiccSubscriptionSidecar.reset();
                 dismissProgressDialog();
                 showErrorDialog(
-                        getString(R.string.privileged_action_disable_fail_title),
-                        getString(R.string.privileged_action_disable_fail_text));
+                        getString(R.string.sim_action_enable_sim_fail_title),
+                        getString(R.string.sim_action_enable_sim_fail_text));
                 break;
         }
     }
@@ -558,15 +557,17 @@ public class ToggleSubscriptionDialogActivity extends SubscriptionActionDialogAc
             Log.d(TAG, "Hardware does not support DSDS.");
             return false;
         }
-        boolean isActiveSim = SubscriptionUtil.getActiveSubscriptions(
+        boolean anyActiveSim = SubscriptionUtil.getActiveSubscriptions(
                 mSubscriptionManager).size() > 0;
-        if (isMultipleEnabledProfilesSupported() && isActiveSim) {
+        if (isMultipleEnabledProfilesSupported() && anyActiveSim) {
             Log.d(TAG,
                     "Device supports MEP and eSIM operation and eSIM profile is enabled."
                             + " DSDS condition satisfied.");
             return true;
         }
-        boolean isRemovableSimEnabled = isRemovableSimEnabled();
+        boolean isRemovableSimEnabled =
+                SubscriptionUtil.getActiveSubscriptions(mSubscriptionManager).stream()
+                        .anyMatch(subInfo-> !subInfo.isEmbedded());
         if (mIsEsimOperation && isRemovableSimEnabled) {
             Log.d(TAG, "eSIM operation and removable SIM is enabled. DSDS condition satisfied.");
             return true;
@@ -584,7 +585,7 @@ public class ToggleSubscriptionDialogActivity extends SubscriptionActionDialogAc
     }
 
     private boolean isRemovableSimEnabled() {
-        return UiccSlotUtil.isRemovableSimEnabled(mTelMgr);
+        return new UiccSlotRepository(mTelMgr).anyRemovablePhysicalSimSlotActiveAndInserted();
     }
 
     private boolean isMultipleEnabledProfilesSupported() {

@@ -21,11 +21,11 @@ import static com.android.internal.accessibility.AccessibilityShortcutController
 import static com.android.settings.accessibility.AccessibilityStatsLogUtils.logAccessibilityServiceEnabled;
 import static com.android.settings.accessibility.AccessibilityUtil.State.OFF;
 import static com.android.settings.accessibility.AccessibilityUtil.State.ON;
+import static com.android.settings.accessibility.DaltonizerPreferenceUtil.isSecureAccessibilityDaltonizerEnabled;
 
 import android.app.settings.SettingsEnums;
 import android.content.ComponentName;
 import android.content.Context;
-import android.content.res.Resources;
 import android.os.Bundle;
 import android.provider.Settings;
 import android.view.LayoutInflater;
@@ -33,54 +33,35 @@ import android.view.View;
 import android.view.ViewGroup;
 
 import androidx.annotation.VisibleForTesting;
-import androidx.preference.Preference;
 
 import com.android.settings.R;
 import com.android.settings.accessibility.AccessibilityUtil.QuickSettingsTooltipType;
 import com.android.settings.search.BaseSearchIndexProvider;
 import com.android.settings.widget.SettingsMainSwitchPreference;
-import com.android.settingslib.core.AbstractPreferenceController;
-import com.android.settingslib.core.lifecycle.Lifecycle;
 import com.android.settingslib.search.SearchIndexable;
+import com.android.settingslib.search.SearchIndexableRaw;
 
 import java.util.ArrayList;
 import java.util.List;
 
 /** Settings for daltonizer. */
 @SearchIndexable(forTarget = SearchIndexable.ALL & ~SearchIndexable.ARC)
-public class ToggleDaltonizerPreferenceFragment extends ToggleFeaturePreferenceFragment
-        implements DaltonizerRadioButtonPreferenceController.OnChangeListener {
+public class ToggleDaltonizerPreferenceFragment extends ToggleFeaturePreferenceFragment {
 
     private static final String TAG = "ToggleDaltonizerPreferenceFragment";
     private static final String ENABLED = Settings.Secure.ACCESSIBILITY_DISPLAY_DALTONIZER_ENABLED;
     private static final String KEY_PREVIEW = "daltonizer_preview";
+    private static final String KEY_DEUTERANOMALY = "daltonizer_mode_deuteranomaly";
+    private static final String KEY_PROTANOMALY = "daltonizer_mode_protanomaly";
+    private static final String KEY_TRITANOMEALY = "daltonizer_mode_tritanomaly";
+    private static final String KEY_GRAYSCALE = "daltonizer_mode_grayscale";
+
     @VisibleForTesting
-    static final String KEY_DEUTERANOMALY = "daltonizer_mode_deuteranomaly";
+    static final String KEY_SHORTCUT_PREFERENCE = "daltonizer_shortcut_key";
     @VisibleForTesting
-    static final String KEY_PROTANOMALY = "daltonizer_mode_protanomaly";
-    @VisibleForTesting
-    static final String KEY_TRITANOMEALY = "daltonizer_mode_tritanomaly";
-    @VisibleForTesting
-    static final String KEY_GRAYSCALE = "daltonizer_mode_grayscale";
+    static final String KEY_SWITCH_PREFERENCE = "daltonizer_switch_preference_key";
     @VisibleForTesting
     static final String KEY_SATURATION = "daltonizer_saturation";
-
-    private static final List<AbstractPreferenceController> sControllers = new ArrayList<>();
-
-    private static List<AbstractPreferenceController> buildPreferenceControllers(Context context,
-            Lifecycle lifecycle) {
-        if (sControllers.size() == 0) {
-            final Resources resources = context.getResources();
-            final String[] daltonizerKeys = resources.getStringArray(
-                    R.array.daltonizer_mode_keys);
-
-            for (String daltonizerKey : daltonizerKeys) {
-                sControllers.add(new DaltonizerRadioButtonPreferenceController(
-                        context, lifecycle, daltonizerKey));
-            }
-        }
-        return sControllers;
-    }
 
     @Override
     protected void registerKeysToObserverCallback(
@@ -97,7 +78,7 @@ public class ToggleDaltonizerPreferenceFragment extends ToggleFeaturePreferenceF
     public View onCreateView(LayoutInflater inflater, ViewGroup container,
             Bundle savedInstanceState) {
         mComponentName = DALTONIZER_COMPONENT_NAME;
-        mPackageName = getText(com.android.settingslib.R
+        mFeatureName = getText(com.android.settingslib.R
                 .string.accessibility_display_daltonizer_preference_title);
         mHtmlDescription = getText(com.android.settingslib.R
                 .string.accessibility_display_daltonizer_preference_subtitle);
@@ -117,13 +98,6 @@ public class ToggleDaltonizerPreferenceFragment extends ToggleFeaturePreferenceF
         }
     }
 
-    @Override
-    public void onCheckedChanged(Preference preference) {
-        for (AbstractPreferenceController controller : sControllers) {
-            controller.updateState(preference);
-        }
-    }
-
     private void updateFooterPreference() {
         final String title = getPrefContext()
                 .getString(R.string.accessibility_daltonizer_about_title);
@@ -139,7 +113,7 @@ public class ToggleDaltonizerPreferenceFragment extends ToggleFeaturePreferenceF
         final List<String> lists = new ArrayList<>();
         lists.add(KEY_TOP_INTRO_PREFERENCE);
         lists.add(KEY_PREVIEW);
-        lists.add(KEY_USE_SERVICE_PREFERENCE);
+        lists.add(getUseServicePreferenceKey());
         // Putting saturation level close to the preview so users can see what is changing.
         lists.add(KEY_SATURATION);
         lists.add(KEY_DEUTERANOMALY);
@@ -155,21 +129,6 @@ public class ToggleDaltonizerPreferenceFragment extends ToggleFeaturePreferenceF
     public void onResume() {
         super.onResume();
         updateSwitchBarToggleSwitch();
-        for (AbstractPreferenceController controller :
-                buildPreferenceControllers(getPrefContext(), getSettingsLifecycle())) {
-            ((DaltonizerRadioButtonPreferenceController) controller).setOnChangeListener(this);
-            ((DaltonizerRadioButtonPreferenceController) controller).displayPreference(
-                    getPreferenceScreen());
-        }
-    }
-
-    @Override
-    public void onPause() {
-        for (AbstractPreferenceController controller :
-                buildPreferenceControllers(getPrefContext(), getSettingsLifecycle())) {
-            ((DaltonizerRadioButtonPreferenceController) controller).setOnChangeListener(null);
-        }
-        super.onPause();
     }
 
     @Override
@@ -194,7 +153,8 @@ public class ToggleDaltonizerPreferenceFragment extends ToggleFeaturePreferenceF
 
     @Override
     protected void onPreferenceToggled(String preferenceKey, boolean enabled) {
-        final boolean isEnabled = Settings.Secure.getInt(getContentResolver(), ENABLED, OFF) == ON;
+        final boolean isEnabled =
+                isSecureAccessibilityDaltonizerEnabled(getContentResolver());
         if (enabled == isEnabled) {
             return;
         }
@@ -215,6 +175,11 @@ public class ToggleDaltonizerPreferenceFragment extends ToggleFeaturePreferenceF
     @Override
     protected void updateToggleServiceTitle(SettingsMainSwitchPreference switchPreference) {
         switchPreference.setTitle(R.string.accessibility_daltonizer_primary_switch_title);
+    }
+
+    @Override
+    protected String getUseServicePreferenceKey() {
+        return KEY_SWITCH_PREFERENCE;
     }
 
     @Override
@@ -250,5 +215,27 @@ public class ToggleDaltonizerPreferenceFragment extends ToggleFeaturePreferenceF
     }
 
     public static final BaseSearchIndexProvider SEARCH_INDEX_DATA_PROVIDER =
-            new BaseSearchIndexProvider(R.xml.accessibility_daltonizer_settings);
+            new BaseSearchIndexProvider(R.xml.accessibility_daltonizer_settings) {
+                @Override
+                public List<SearchIndexableRaw> getRawDataToIndex(Context context,
+                        boolean enabled) {
+                    final List<SearchIndexableRaw> rawData =
+                            super.getRawDataToIndex(context, enabled);
+
+                    if (Flags.fixA11ySettingsSearch()) {
+                        SearchIndexableRaw shortcutRaw = new SearchIndexableRaw(context);
+                        shortcutRaw.key = KEY_SHORTCUT_PREFERENCE;
+                        shortcutRaw.title = context.getString(
+                                R.string.accessibility_daltonizer_shortcut_title);
+                        rawData.add(shortcutRaw);
+
+                        SearchIndexableRaw mainSwitchRaw = new SearchIndexableRaw(context);
+                        mainSwitchRaw.key = KEY_SWITCH_PREFERENCE;
+                        mainSwitchRaw.title = context.getString(
+                                R.string.accessibility_daltonizer_primary_switch_title);
+                        rawData.add(mainSwitchRaw);
+                    }
+                    return rawData;
+                }
+            };
 }

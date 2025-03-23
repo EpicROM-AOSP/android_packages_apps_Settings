@@ -18,12 +18,16 @@ package com.android.settings;
 
 import static android.provider.Settings.ACTION_PRIVACY_SETTINGS;
 
+import android.annotation.FlaggedApi;
+import android.app.Flags;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.os.Bundle;
 import android.telephony.ims.ImsRcsManager;
 import android.text.TextUtils;
 import android.util.Log;
+
+import androidx.annotation.Nullable;
 
 import com.android.internal.annotations.VisibleForTesting;
 import com.android.settings.biometrics.face.FaceSettings;
@@ -33,6 +37,7 @@ import com.android.settings.network.MobileNetworkIntentConverter;
 import com.android.settings.overlay.FeatureFactory;
 import com.android.settings.safetycenter.SafetyCenterManagerWrapper;
 import com.android.settings.security.SecuritySettingsFeatureProvider;
+import com.android.settings.wifi.WifiUtils;
 
 import com.google.android.setupdesign.util.ThemeHelper;
 
@@ -71,18 +76,33 @@ public class Settings extends SettingsActivity {
     public static class NetworkProviderSettingsActivity extends SettingsActivity { /* empty */ }
     public static class NetworkSelectActivity extends SettingsActivity { /* empty */ }
     /** Activity for the Wi-Fi network details settings. */
-    public static class WifiDetailsSettingsActivity extends SettingsActivity { /* empty */ }
+    public static class WifiDetailsSettingsActivity extends SettingsActivity {
+        @Override
+        protected void createUiFromIntent(@Nullable Bundle savedState, Intent intent) {
+            Bundle bundle = intent.getBundleExtra(EXTRA_SHOW_FRAGMENT_ARGUMENTS);
+            if (TextUtils.isEmpty(bundle.getString(WifiUtils.KEY_CHOSEN_WIFIENTRY_KEY))) {
+                Log.e(getLocalClassName(), "The key of WifiEntry is empty!");
+                finishAndRemoveTask();
+                return;
+            }
+            super.createUiFromIntent(savedState, intent);
+        }
+    }
     public static class WifiP2pSettingsActivity extends SettingsActivity { /* empty */ }
     public static class AvailableVirtualKeyboardActivity extends SettingsActivity { /* empty */ }
     public static class KeyboardLayoutPickerActivity extends SettingsActivity { /* empty */ }
     public static class PhysicalKeyboardActivity extends SettingsActivity { /* empty */ }
+    public static class PhysicalKeyboardLayoutPickerActivity extends SettingsActivity {
+        /* empty */
+    }
     public static class InputMethodAndSubtypeEnablerActivity extends SettingsActivity { /* empty */ }
     public static class SpellCheckersSettingsActivity extends SettingsActivity { /* empty */ }
     public static class LocalePickerActivity extends SettingsActivity { /* empty */ }
-    public static class LanguageAndInputSettingsActivity extends SettingsActivity { /* empty */ }
     public static class LanguageSettingsActivity extends SettingsActivity { /* empty */ }
     /** Activity for the regional preferences settings. */
     public static class RegionalPreferencesActivity extends SettingsActivity { /* empty */ }
+    public static class TemperatureUnitSettingsActivity extends SettingsActivity { /* empty */ }
+    public static class FirstDayOfWeekSettingsActivity extends SettingsActivity { /* empty */ }
     public static class KeyboardSettingsActivity extends SettingsActivity { /* empty */ }
     /** Activity for the navigation mode settings. */
     public static class NavigationModeSettingsActivity extends SettingsActivity { /* empty */ }
@@ -96,6 +116,7 @@ public class Settings extends SettingsActivity {
     public static class ModuleLicensesActivity extends SettingsActivity { /* empty */ }
     public static class ApplicationSettingsActivity extends SettingsActivity { /* empty */ }
     public static class ManageApplicationsActivity extends SettingsActivity { /* empty */ }
+    public static class AppStorageSettingsActivity extends SettingsActivity { /* empty */ }
     public static class ManageAssistActivity extends SettingsActivity { /* empty */ }
     public static class HighPowerApplicationsActivity extends SettingsActivity { /* empty */ }
     public static class BackgroundCheckSummaryActivity extends SettingsActivity { /* empty */ }
@@ -301,6 +322,7 @@ public class Settings extends SettingsActivity {
     public static class UserSettingsActivity extends SettingsActivity { /* empty */ }
     public static class NotificationAccessSettingsActivity extends SettingsActivity { /* empty */ }
     public static class NotificationAccessDetailsActivity extends SettingsActivity { /* empty */ }
+    public static class ManageAdaptiveNotificationsActivity extends SettingsActivity { /* empty */ }
     public static class VrListenersSettingsActivity extends SettingsActivity { /* empty */ }
     public static class PremiumSmsAccessActivity extends SettingsActivity { /* empty */ }
     public static class PictureInPictureSettingsActivity extends SettingsActivity { /* empty */ }
@@ -317,11 +339,13 @@ public class Settings extends SettingsActivity {
     public static class PrintSettingsActivity extends SettingsActivity { /* empty */ }
     public static class PrintJobSettingsActivity extends SettingsActivity { /* empty */ }
     public static class ZenModeSettingsActivity extends SettingsActivity { /* empty */ }
-    public static class ZenModeBehaviorSettingsActivity extends SettingsActivity { /* empty */ }
-    public static class ZenModeBlockedEffectsSettingsActivity extends SettingsActivity { /* empty */ }
     public static class ZenModeAutomationSettingsActivity extends SettingsActivity { /* empty */ }
     public static class ZenModeScheduleRuleSettingsActivity extends SettingsActivity { /* empty */ }
     public static class ZenModeEventRuleSettingsActivity extends SettingsActivity { /* empty */ }
+    @FlaggedApi(Flags.FLAG_MODES_UI)
+    public static class ModeSettingsActivity extends SettingsActivity { /* empty */ }
+    @FlaggedApi(Flags.FLAG_MODES_UI)
+    public static class ModesSettingsActivity extends SettingsActivity { /* empty */ }
     public static class SoundSettingsActivity extends SettingsActivity { /* empty */ }
     public static class ConfigureNotificationSettingsActivity extends SettingsActivity { /* empty */ }
     public static class ConversationListSettingsActivity extends SettingsActivity { /* empty */ }
@@ -428,7 +452,7 @@ public class Settings extends SettingsActivity {
             super.onNewIntent(intent);
 
             Log.d(TAG, "Starting onNewIntent");
-
+            setIntent(intent);
             createUiFromIntent(null /* savedState */, convertIntent(intent));
         }
 
@@ -466,6 +490,7 @@ public class Settings extends SettingsActivity {
     public static class NetworkDashboardActivity extends SettingsActivity {}
     public static class ConnectedDeviceDashboardActivity extends SettingsActivity {}
     public static class PowerUsageSummaryActivity extends SettingsActivity { /* empty */ }
+    public static class PowerUsageAdvancedActivity extends SettingsActivity { /* empty */ }
     public static class StorageDashboardActivity extends SettingsActivity {}
     public static class AccountDashboardActivity extends SettingsActivity {}
     public static class SystemDashboardActivity extends SettingsActivity {}
@@ -496,4 +521,5 @@ public class Settings extends SettingsActivity {
 
     public static class HearingDevicesActivity extends SettingsActivity { /* empty */ }
     public static class HearingDevicesPairingActivity extends SettingsActivity { /* empty */ }
+    public static class ContactsStorageSettingsActivity extends SettingsActivity { /* empty */ }
 }

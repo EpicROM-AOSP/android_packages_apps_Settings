@@ -21,6 +21,7 @@ import android.app.settings.SettingsEnums;
 import android.os.Bundle;
 import android.util.Log;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
@@ -28,6 +29,7 @@ import androidx.fragment.app.FragmentManager;
 
 import com.android.settings.R;
 import com.android.settings.core.instrumentation.InstrumentedDialogFragment;
+import com.android.settingslib.bluetooth.BluetoothUtils;
 
 public class AudioSharingConfirmDialogFragment extends InstrumentedDialogFragment {
     private static final String TAG = "AudioSharingConfirmDialog";
@@ -42,20 +44,32 @@ public class AudioSharingConfirmDialogFragment extends InstrumentedDialogFragmen
      *
      * @param host The Fragment this dialog will be hosted.
      */
-    public static void show(Fragment host) {
-        if (!AudioSharingUtils.isFeatureEnabled()) return;
-        FragmentManager manager = host.getChildFragmentManager();
-        AlertDialog dialog = AudioSharingDialogHelper.getDialogIfShowing(manager, TAG);
-        if (dialog != null) {
-            Log.d(TAG, "Dialog is showing, return.");
+    public static void show(@Nullable Fragment host) {
+        if (host == null) {
+            Log.d(TAG, "Fail to show dialog, host is null");
             return;
         }
-        Log.d(TAG, "Show up the confirm dialog.");
-        AudioSharingConfirmDialogFragment dialogFrag = new AudioSharingConfirmDialogFragment();
-        dialogFrag.show(manager, TAG);
+        if (BluetoothUtils.isAudioSharingUIAvailable(host.getContext())) {
+            final FragmentManager manager;
+            try {
+                manager = host.getChildFragmentManager();
+            } catch (IllegalStateException e) {
+                Log.d(TAG, "Fail to show dialog: " + e.getMessage());
+                return;
+            }
+            AlertDialog dialog = AudioSharingDialogHelper.getDialogIfShowing(manager, TAG);
+            if (dialog != null) {
+                Log.d(TAG, "Dialog is showing, return.");
+                return;
+            }
+            Log.d(TAG, "Show up the confirm dialog.");
+            AudioSharingConfirmDialogFragment dialogFrag = new AudioSharingConfirmDialogFragment();
+            dialogFrag.show(manager, TAG);
+        }
     }
 
     @Override
+    @NonNull
     public Dialog onCreateDialog(@Nullable Bundle savedInstanceState) {
         AlertDialog dialog =
                 AudioSharingDialogFactory.newBuilder(getActivity())
@@ -63,7 +77,7 @@ public class AudioSharingConfirmDialogFragment extends InstrumentedDialogFragmen
                         .setTitleIcon(com.android.settingslib.R.drawable.ic_bt_le_audio_sharing)
                         .setIsCustomBodyEnabled(true)
                         .setCustomMessage(R.string.audio_sharing_comfirm_dialog_content)
-                        .setPositiveButton(com.android.settings.R.string.okay, (d, w) -> {})
+                        .setPositiveButton(R.string.audio_sharing_close_button_label, (d, w) -> {})
                         .build();
         dialog.setCanceledOnTouchOutside(true);
         return dialog;

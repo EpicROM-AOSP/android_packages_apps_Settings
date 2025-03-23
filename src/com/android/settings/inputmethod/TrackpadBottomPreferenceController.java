@@ -49,7 +49,8 @@ public class TrackpadBottomPreferenceController extends TogglePreferenceControll
 
     @Override
     public int getAvailabilityStatus() {
-        return AVAILABLE;
+        boolean isTouchpad = InputPeripheralsSettingsUtils.isTouchpad();
+        return isTouchpad ? AVAILABLE : CONDITIONALLY_UNAVAILABLE;
     }
 
     @Override

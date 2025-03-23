@@ -16,6 +16,7 @@
 
 package com.android.settings.accessibility;
 
+import android.bluetooth.BluetoothDevice;
 import android.content.Context;
 
 import com.android.settings.bluetooth.AvailableMediaBluetoothDeviceUpdater;
@@ -27,22 +28,28 @@ import com.android.settingslib.bluetooth.CachedBluetoothDevice;
  */
 public class AvailableHearingDeviceUpdater extends AvailableMediaBluetoothDeviceUpdater {
 
-    private static final String PREF_KEY = "connected_hearing_device";
+    private static final String PREF_KEY_PREFIX = "connected_hearing_device_";
 
     public AvailableHearingDeviceUpdater(Context context,
             DevicePreferenceCallback devicePreferenceCallback, int metricsCategory) {
         super(context, devicePreferenceCallback, metricsCategory);
     }
 
+    static boolean isAvailableHearingDevice(CachedBluetoothDevice cachedDevice) {
+        final BluetoothDevice device = cachedDevice.getDevice();
+        return cachedDevice.isHearingAidDevice()
+                && device.getBondState() == BluetoothDevice.BOND_BONDED
+                && device.isConnected();
+    }
+
     @Override
     public boolean isFilterMatched(CachedBluetoothDevice cachedDevice) {
-        return cachedDevice.isHearingAidDevice()
-                && isDeviceConnected(cachedDevice)
+        return isAvailableHearingDevice(cachedDevice)
                 && isDeviceInCachedDevicesList(cachedDevice);
     }
 
     @Override
-    protected String getPreferenceKey() {
-        return PREF_KEY;
+    protected String getPreferenceKeyPrefix() {
+        return PREF_KEY_PREFIX;
     }
 }

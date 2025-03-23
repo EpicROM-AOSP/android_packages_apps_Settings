@@ -20,6 +20,7 @@ import static com.android.settings.accessibility.AccessibilityDialogUtils.Dialog
 import static com.android.settings.accessibility.AccessibilityStatsLogUtils.logAccessibilityServiceEnabled;
 
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.annotation.SuppressLint;
 import android.app.AlertDialog;
 import android.app.Dialog;
 import android.app.settings.SettingsEnums;
@@ -40,7 +41,6 @@ import android.text.TextUtils;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuInflater;
-import android.view.View;
 import android.view.accessibility.AccessibilityManager;
 import android.widget.CompoundButton;
 
@@ -54,6 +54,7 @@ import com.android.settingslib.accessibility.AccessibilityUtils;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /** Fragment for providing toggle bar and basic accessibility service setup. */
@@ -324,6 +325,7 @@ public class ToggleAccessibilityServicePreferenceFragment extends
         }
     }
 
+    @SuppressLint("MissingPermission")
     @Override
     public void onToggleClicked(ShortcutPreference preference) {
         final int shortcutTypes = getUserPreferredShortcutTypes();
@@ -338,8 +340,10 @@ public class ToggleAccessibilityServicePreferenceFragment extends
                 onAllowButtonFromShortcutToggleClicked();
             }
         } else {
-            AccessibilityUtil.optOutAllValuesFromSettings(getPrefContext(), shortcutTypes,
-                    mComponentName);
+            getPrefContext().getSystemService(AccessibilityManager.class)
+                            .enableShortcutsForTargets(false, shortcutTypes,
+                                    Set.of(mComponentName.flattenToString()),
+                                    getPrefContext().getUserId());
         }
         mShortcutPreference.setSummary(getShortcutTypeSummary(getPrefContext()));
     }
@@ -386,8 +390,8 @@ public class ToggleAccessibilityServicePreferenceFragment extends
         }
 
         // Get Accessibility service name.
-        mPackageName = getAccessibilityServiceInfo().getResolveInfo().loadLabel(
-                getPackageManager());
+        AccessibilityServiceInfo info = getAccessibilityServiceInfo();
+        mFeatureName = info == null ? "" : info.getResolveInfo().loadLabel(getPackageManager());
 
         if (arguments.containsKey(AccessibilitySettings.EXTRA_TILE_SERVICE_COMPONENT_NAME)) {
             final String tileServiceComponentName = arguments.getString(
@@ -408,17 +412,6 @@ public class ToggleAccessibilityServicePreferenceFragment extends
                 break;
             default:
                 throw new IllegalArgumentException("Unexpected button identifier");
-        }
-    }
-
-    private void onDialogButtonFromEnableToggleClicked(View view) {
-        final int viewId = view.getId();
-        if (viewId == R.id.permission_enable_allow_button) {
-            onAllowButtonFromEnableToggleClicked();
-        } else if (viewId == R.id.permission_enable_deny_button) {
-            onDenyButtonFromEnableToggleClicked();
-        } else {
-            throw new IllegalArgumentException("Unexpected view id");
         }
     }
 
@@ -464,15 +457,11 @@ public class ToggleAccessibilityServicePreferenceFragment extends
 
     @Override
     protected int getDefaultShortcutTypes() {
-        if (android.view.accessibility.Flags.a11yQsShortcut()) {
-            AccessibilityServiceInfo info = getAccessibilityServiceInfo();
-            boolean isAccessibilityTool = info != null && info.isAccessibilityTool();
-            return !isAccessibilityTool || getTileComponentName() == null
-                    ? super.getDefaultShortcutTypes()
-                    : ShortcutConstants.UserShortcutType.QUICK_SETTINGS;
-        }
-
-        return super.getDefaultShortcutTypes();
+        AccessibilityServiceInfo info = getAccessibilityServiceInfo();
+        boolean isAccessibilityTool = info != null && info.isAccessibilityTool();
+        return !isAccessibilityTool || getTileComponentName() == null
+                ? super.getDefaultShortcutTypes()
+                : ShortcutConstants.UserShortcutType.QUICK_SETTINGS;
     }
 
     private void onAllowButtonFromEnableToggleClicked() {
@@ -491,22 +480,14 @@ public class ToggleAccessibilityServicePreferenceFragment extends
         mWarningDialog.dismiss();
     }
 
-    void onDialogButtonFromShortcutToggleClicked(View view) {
-        final int viewId = view.getId();
-        if (viewId == R.id.permission_enable_allow_button) {
-            onAllowButtonFromShortcutToggleClicked();
-        } else if (viewId == R.id.permission_enable_deny_button) {
-            onDenyButtonFromShortcutToggleClicked();
-        } else {
-            throw new IllegalArgumentException("Unexpected view id");
-        }
-    }
-
+    @SuppressLint("MissingPermission")
     void onAllowButtonFromShortcutToggleClicked() {
         mShortcutPreference.setChecked(true);
 
         final int shortcutTypes = getUserPreferredShortcutTypes();
-        AccessibilityUtil.optInAllValuesToSettings(getPrefContext(), shortcutTypes, mComponentName);
+        getPrefContext().getSystemService(AccessibilityManager.class)
+                .enableShortcutsForTargets(true, shortcutTypes,
+                        Set.of(mComponentName.flattenToString()), getPrefContext().getUserId());
 
         mIsDialogShown.set(false);
         showPopupDialog(DialogEnums.LAUNCH_ACCESSIBILITY_TUTORIAL);
@@ -526,17 +507,13 @@ public class ToggleAccessibilityServicePreferenceFragment extends
 
     private void onAllowButtonFromShortcutClicked() {
         mIsDialogShown.set(false);
-        if (Flags.editShortcutsInFullScreen()) {
-            EditShortcutsPreferenceFragment.showEditShortcutScreen(
-                    getContext(),
-                    getMetricsCategory(),
-                    getShortcutTitle(),
-                    mComponentName,
-                    getIntent()
-            );
-        } else {
-            showPopupDialog(DialogEnums.EDIT_SHORTCUT);
-        }
+        EditShortcutsPreferenceFragment.showEditShortcutScreen(
+                getContext(),
+                getMetricsCategory(),
+                getShortcutTitle(),
+                mComponentName,
+                getIntent()
+        );
 
         if (mWarningDialog != null) {
             mWarningDialog.dismiss();

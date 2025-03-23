@@ -29,25 +29,27 @@ import com.android.settingslib.bluetooth.CachedBluetoothDevice;
  */
 public class SavedHearingDeviceUpdater extends SavedBluetoothDeviceUpdater {
 
-    private static final String PREF_KEY = "saved_hearing_device";
+    private static final String PREF_KEY_PREFIX = "saved_hearing_device_";
 
     public SavedHearingDeviceUpdater(Context context,
             DevicePreferenceCallback devicePreferenceCallback, int metricsCategory) {
         super(context, devicePreferenceCallback, /* showConnectedDevice= */ false, metricsCategory);
     }
 
-    @Override
-    public boolean isFilterMatched(CachedBluetoothDevice cachedDevice) {
+    static boolean isSavedHearingAidDevice(CachedBluetoothDevice cachedDevice) {
         final BluetoothDevice device = cachedDevice.getDevice();
-        final boolean isSavedHearingAidDevice = cachedDevice.isHearingAidDevice()
+        return cachedDevice.isHearingAidDevice()
                 && device.getBondState() == BluetoothDevice.BOND_BONDED
                 && !device.isConnected();
-
-        return isSavedHearingAidDevice && isDeviceInCachedDevicesList(cachedDevice);
     }
 
     @Override
-    protected String getPreferenceKey() {
-        return PREF_KEY;
+    public boolean isFilterMatched(CachedBluetoothDevice cachedDevice) {
+        return isSavedHearingAidDevice(cachedDevice) && isDeviceInCachedDevicesList(cachedDevice);
+    }
+
+    @Override
+    protected String getPreferenceKeyPrefix() {
+        return PREF_KEY_PREFIX;
     }
 }

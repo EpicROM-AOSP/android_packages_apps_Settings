@@ -30,7 +30,6 @@ import android.hardware.input.InputManager;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.UserManager;
-import android.provider.DeviceConfig;
 import android.text.TextUtils;
 import android.util.FeatureFlagUtils;
 import android.util.Log;
@@ -43,13 +42,16 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.annotation.VisibleForTesting;
 
 import com.android.settings.R;
+import com.android.settings.bluetooth.ui.model.FragmentTypeModel;
+import com.android.settings.bluetooth.ui.view.DeviceDetailsFragmentFormatter;
 import com.android.settings.connecteddevice.stylus.StylusDevicesController;
-import com.android.settings.core.SettingsUIDeviceConfig;
 import com.android.settings.dashboard.RestrictedDashboardFragment;
+import com.android.settings.flags.Flags;
 import com.android.settings.inputmethod.KeyboardSettingsPreferenceController;
 import com.android.settings.overlay.FeatureFactory;
 import com.android.settings.slices.SlicePreferenceController;
@@ -62,6 +64,7 @@ import com.android.settingslib.core.lifecycle.Lifecycle;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 public class BluetoothDeviceDetailsFragment extends RestrictedDashboardFragment {
     public static final String KEY_DEVICE_ADDRESS = "device_address";
@@ -97,6 +100,8 @@ public class BluetoothDeviceDetailsFragment extends RestrictedDashboardFragment 
     @VisibleForTesting
     CachedBluetoothDevice mCachedDevice;
     BluetoothAdapter mBluetoothAdapter;
+    @VisibleForTesting
+    DeviceDetailsFragmentFormatter mFormatter;
 
     @Nullable
     InputDevice mInputDevice;
@@ -115,6 +120,14 @@ public class BluetoothDeviceDetailsFragment extends RestrictedDashboardFragment 
                         if (activity != null) {
                             activity.finish();
                         }
+                    }
+                }
+
+                @Override
+                public void onDeviceBondStateChanged(
+                        @NonNull CachedBluetoothDevice cachedDevice, int bondState) {
+                    if (cachedDevice.equals(mCachedDevice)) {
+                        finishFragmentIfNecessary();
                     }
                 }
             };
@@ -213,18 +226,25 @@ public class BluetoothDeviceDetailsFragment extends RestrictedDashboardFragment 
             finish();
             return;
         }
-        use(AdvancedBluetoothDetailsHeaderController.class).init(mCachedDevice);
-        use(LeAudioBluetoothDetailsHeaderController.class).init(mCachedDevice, mManager);
-        use(KeyboardSettingsPreferenceController.class).init(mCachedDevice);
+        getController(
+                AdvancedBluetoothDetailsHeaderController.class,
+                controller -> controller.init(mCachedDevice, this));
+        getController(
+                LeAudioBluetoothDetailsHeaderController.class,
+                controller -> controller.init(mCachedDevice, mManager, this));
+        getController(
+                KeyboardSettingsPreferenceController.class,
+                controller -> controller.init(mCachedDevice));
 
         final BluetoothFeatureProvider featureProvider =
                 FeatureFactory.getFeatureFactory().getBluetoothFeatureProvider();
-        final boolean sliceEnabled = DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_SETTINGS_UI,
-                SettingsUIDeviceConfig.BT_SLICE_SETTINGS_ENABLED, true);
 
-        use(BlockingPrefWithSliceController.class).setSliceUri(sliceEnabled
-                ? featureProvider.getBluetoothDeviceSettingsUri(mCachedDevice.getDevice())
-                : null);
+        getController(
+                BlockingPrefWithSliceController.class,
+                controller ->
+                        controller.setSliceUri(
+                                featureProvider.getBluetoothDeviceSettingsUri(
+                                        mCachedDevice.getDevice())));
 
         mManager.getEventManager().registerCallback(mBluetoothCallback);
         mBluetoothAdapter.addOnMetadataChangedListener(
@@ -237,15 +257,22 @@ public class BluetoothDeviceDetailsFragment extends RestrictedDashboardFragment 
     public void onDetach() {
         super.onDetach();
         mManager.getEventManager().unregisterCallback(mBluetoothCallback);
-        mBluetoothAdapter.removeOnMetadataChangedListener(
-                mCachedDevice.getDevice(), mExtraControlMetadataListener);
+        BluetoothDevice device = mCachedDevice.getDevice();
+        try {
+            mBluetoothAdapter.removeOnMetadataChangedListener(
+                    device, mExtraControlMetadataListener);
+        } catch (IllegalArgumentException e) {
+            Log.w(
+                    TAG,
+                    "Unable to unregister metadata change callback for "
+                            + mCachedDevice,
+                    e);
+        }
     }
 
     private void updateExtraControlUri(int viewWidth) {
         BluetoothFeatureProvider featureProvider =
                 FeatureFactory.getFeatureFactory().getBluetoothFeatureProvider();
-        boolean sliceEnabled = DeviceConfig.getBoolean(DeviceConfig.NAMESPACE_SETTINGS_UI,
-                SettingsUIDeviceConfig.BT_SLICE_SETTINGS_ENABLED, true);
         Uri controlUri = null;
         String uri = featureProvider.getBluetoothDeviceControlUri(mCachedDevice.getDevice());
         if (!TextUtils.isEmpty(uri)) {
@@ -256,21 +283,39 @@ public class BluetoothDeviceDetailsFragment extends RestrictedDashboardFragment 
             }
         }
         mExtraControlUriLoaded |= controlUri != null;
-        final SlicePreferenceController slicePreferenceController = use(
-                SlicePreferenceController.class);
-        slicePreferenceController.setSliceUri(sliceEnabled ? controlUri : null);
-        slicePreferenceController.onStart();
-        slicePreferenceController.displayPreference(getPreferenceScreen());
+
+        Uri finalControlUri = controlUri;
+        getController(
+                SlicePreferenceController.class,
+                controller -> {
+                    if (getPreferenceScreen().findPreference(controller.getPreferenceKey())
+                            != null) {
+                        controller.setSliceUri(finalControlUri);
+                        controller.onStart();
+                        controller.displayPreference(getPreferenceScreen());
+                    }
+                });
 
         // Temporarily fix the issue that the page will be automatically scrolled to a wrong
         // position when entering the page. This will make sure the bluetooth header is shown on top
         // of the page.
-        use(LeAudioBluetoothDetailsHeaderController.class).displayPreference(
-                getPreferenceScreen());
-        use(AdvancedBluetoothDetailsHeaderController.class).displayPreference(
-                getPreferenceScreen());
-        use(BluetoothDetailsHeaderController.class).displayPreference(
-                getPreferenceScreen());
+        getController(
+                LeAudioBluetoothDetailsHeaderController.class,
+                controller -> controller.displayPreference(getPreferenceScreen()));
+        getController(
+                AdvancedBluetoothDetailsHeaderController.class,
+                controller -> controller.displayPreference(getPreferenceScreen()));
+        getController(
+                BluetoothDetailsHeaderController.class,
+                controller -> controller.displayPreference(getPreferenceScreen()));
+    }
+
+    protected <T extends AbstractPreferenceController> void getController(Class<T> clazz,
+            Consumer<T> action) {
+        T controller = use(clazz);
+        if (controller != null) {
+            action.accept(controller);
+        }
     }
 
     private final ViewTreeObserver.OnGlobalLayoutListener mOnGlobalLayoutListener =
@@ -304,7 +349,30 @@ public class BluetoothDeviceDetailsFragment extends RestrictedDashboardFragment 
         if (view != null) {
             view.getViewTreeObserver().addOnGlobalLayoutListener(mOnGlobalLayoutListener);
         }
+        getListView().setItemViewCacheSize(100);
         return view;
+    }
+
+    @Override
+    public void onViewCreated(@NonNull View view, @Nullable Bundle savedInstanceState) {
+        super.onViewCreated(view, savedInstanceState);
+        if (Flags.enableBluetoothDeviceDetailsPolish()) {
+            if (mFormatter == null) {
+                List<AbstractPreferenceController> controllers = getPreferenceControllers().stream()
+                        .flatMap(List::stream)
+                        .toList();
+                mFormatter =
+                        FeatureFactory.getFeatureFactory()
+                                .getBluetoothFeatureProvider()
+                                .getDeviceDetailsFragmentFormatter(
+                                        requireContext(),
+                                        this,
+                                        mBluetoothAdapter,
+                                        mCachedDevice,
+                                        controllers);
+            }
+            mFormatter.updateLayout(FragmentTypeModel.DeviceDetailsMainFragment.INSTANCE);
+        }
     }
 
     @Override
@@ -338,7 +406,7 @@ public class BluetoothDeviceDetailsFragment extends RestrictedDashboardFragment 
 
     @Override
     public void onCreateOptionsMenu(Menu menu, MenuInflater inflater) {
-        if (!mUserManager.isGuestUser()) {
+        if (!Flags.enableBluetoothDeviceDetailsPolish() && !mUserManager.isGuestUser()) {
             MenuItem item = menu.add(0, EDIT_DEVICE_NAME_ITEM_ID, 0,
                     R.string.bluetooth_rename_button);
             item.setIcon(com.android.internal.R.drawable.ic_mode_edit);
@@ -365,6 +433,9 @@ public class BluetoothDeviceDetailsFragment extends RestrictedDashboardFragment 
             Lifecycle lifecycle = getSettingsLifecycle();
             controllers.add(new BluetoothDetailsHeaderController(context, this, mCachedDevice,
                     lifecycle));
+            controllers.add(
+                    new GeneralBluetoothDetailsHeaderController(
+                            context, this, mCachedDevice, lifecycle));
             controllers.add(new BluetoothDetailsButtonsController(context, this, mCachedDevice,
                     lifecycle));
             controllers.add(new BluetoothDetailsCompanionAppsController(context, this,

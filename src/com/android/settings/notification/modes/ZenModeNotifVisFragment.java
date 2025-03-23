@@ -19,6 +19,7 @@ package com.android.settings.notification.modes;
 import android.app.settings.SettingsEnums;
 import android.content.Context;
 import android.service.notification.ZenPolicy;
+
 import com.android.settings.R;
 import com.android.settingslib.core.AbstractPreferenceController;
 
@@ -37,7 +38,8 @@ public class ZenModeNotifVisFragment extends ZenModeFragmentBase {
         prefControllers.add(new ZenModeNotifVisPreferenceController(context,
                 "zen_effect_light", ZenPolicy.VISUAL_EFFECT_LIGHTS, null, mBackend));
         prefControllers.add(new ZenModeNotifVisPreferenceController(context,
-                "zen_effect_peek", ZenPolicy.VISUAL_EFFECT_PEEK, null, mBackend));
+                "zen_effect_peek", ZenPolicy.VISUAL_EFFECT_PEEK,
+                new int[] {ZenPolicy.VISUAL_EFFECT_NOTIFICATION_LIST}, mBackend));
         prefControllers.add(new ZenModeNotifVisPreferenceController(context,
                 "zen_effect_status", ZenPolicy.VISUAL_EFFECT_STATUS_BAR,
                 new int[] {ZenPolicy.VISUAL_EFFECT_NOTIFICATION_LIST}, mBackend));
@@ -57,7 +59,6 @@ public class ZenModeNotifVisFragment extends ZenModeFragmentBase {
 
     @Override
     public int getMetricsCategory() {
-        // TODO: b/332937635 - make this the correct metrics category
-        return SettingsEnums.DND_PEOPLE;
+        return SettingsEnums.ZEN_CUSTOM_RULE_VIS_EFFECTS;
     }
 }

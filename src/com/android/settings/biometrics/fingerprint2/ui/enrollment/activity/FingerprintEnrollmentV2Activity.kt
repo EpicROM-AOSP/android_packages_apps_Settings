@@ -96,8 +96,8 @@ class FingerprintEnrollmentV2Activity : FragmentActivity() {
   }
 
   /**
-   * View models below this line are not used by this class but must be initialized
-   * in the activity view model store to be used by other view models.
+   * View models below this line are not used by this class but must be initialized in the activity
+   * view model store to be used by other view models.
    */
   private val fingerprintEnrollViewModel: FingerprintEnrollViewModel by viewModels {
     FingerprintEnrollViewModel.Factory
@@ -149,11 +149,11 @@ class FingerprintEnrollmentV2Activity : FragmentActivity() {
     super.onConfigurationChanged(newConfig)
     foldStateInteractor.onConfigurationChange(newConfig)
     val displayDensityUtils = DisplayDensityUtils(applicationContext)
-    val currIndex = displayDensityUtils.currentIndexForDefaultDisplay
+    val currIndex = displayDensityUtils.currentIndex
     displayDensityInteractor.updateFontScale(resources.configuration.fontScale)
-    displayDensityInteractor.updateDisplayDensity(
-      displayDensityUtils.defaultDisplayDensityValues[currIndex]
-    )
+    displayDensityUtils.values?.let {
+      displayDensityInteractor.updateDisplayDensity(it[currIndex])
+    }
   }
 
   private fun onConfirmDevice(resultCode: Int, data: Intent?) {

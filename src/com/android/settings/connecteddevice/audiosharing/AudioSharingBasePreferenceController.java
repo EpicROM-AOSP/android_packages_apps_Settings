@@ -29,6 +29,7 @@ import androidx.preference.PreferenceScreen;
 
 import com.android.settings.bluetooth.Utils;
 import com.android.settings.core.BasePreferenceController;
+import com.android.settingslib.bluetooth.BluetoothUtils;
 import com.android.settingslib.bluetooth.LocalBluetoothLeBroadcast;
 import com.android.settingslib.bluetooth.LocalBluetoothManager;
 import com.android.settingslib.bluetooth.LocalBluetoothProfileManager;
@@ -54,7 +55,8 @@ public abstract class AudioSharingBasePreferenceController extends BasePreferenc
 
     @Override
     public int getAvailabilityStatus() {
-        return AudioSharingUtils.isFeatureEnabled() ? AVAILABLE : UNSUPPORTED_ON_DEVICE;
+        return (BluetoothUtils.isAudioSharingUIAvailable(mContext))
+                ? AVAILABLE : UNSUPPORTED_ON_DEVICE;
     }
 
     @Override
